@@ -1,6 +1,7 @@
 pub mod conversions;
 pub mod namespace_config;
 pub mod observability;
+pub mod partition_router;
 pub mod version_generator;
 
 pub use conversions::{
@@ -20,4 +21,5 @@ pub use observability::{
     record_write_latency, set_active_connections, set_namespace_count, set_partition_count,
     update_cache_stats, update_level_stats,
 };
+pub use partition_router::{LocalPartitionRouter, PartitionRouter};
 pub use version_generator::VersionGenerator;
