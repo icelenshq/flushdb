@@ -1,0 +1,111 @@
+syntax = "proto3";
+package flushdb.v1;
+
+service FlushDb {
+  rpc PutItems(PutItemsRequest) returns (PutItemsResponse);
+  rpc GetItems(GetItemsRequest) returns (GetItemsResponse);
+  rpc DeleteItems(DeleteItemsRequest) returns (DeleteItemsResponse);
+  rpc ScanItems(ScanItemsRequest) returns (stream ScanItemsResponse);
+}
+
+message PutItemsRequest {
+  IdempotencyToken idempotency_token = 1;
+  string namespace = 2;
+  string id = 3;
+  repeated Item items = 4;
+  reserved 10 to 20;
+}
+
+message PutItemsResponse {
+  OrderedKey version = 1;
+  reserved 10 to 20;
+}
+
+message GetItemsRequest {
+  string namespace = 1;
+  string id = 2;
+  Predicate predicate = 3;
+  Selection selection = 4;
+  map<string, bytes> signals = 5;
+  reserved 10 to 20;
+}
+
+message GetItemsResponse {
+  repeated Item items = 1;
+  bytes next_page_token = 2;
+  reserved 10 to 20;
+}
+
+message DeleteItemsRequest {
+  IdempotencyToken idempotency_token = 1;
+  string namespace = 2;
+  string id = 3;
+  Predicate predicate = 4;
+  reserved 10 to 20;
+}
+
+message DeleteItemsResponse {
+  OrderedKey version = 1;
+  reserved 10 to 20;
+}
+
+message ScanItemsRequest {
+  string namespace = 1;
+  string id = 2;
+  Predicate predicate = 3;
+  map<string, bytes> signals = 4;
+  reserved 10 to 20;
+}
+
+message ScanItemsResponse {
+  repeated Item items = 1;
+  reserved 10 to 20;
+}
+
+message Item {
+  bytes key = 1;
+  bytes value = 2;
+  bytes metadata = 3;
+  uint32 chunk = 4;
+  reserved 10 to 20;
+}
+
+message IdempotencyToken {
+  uint64 generation_time = 1;
+  bytes token = 2;
+  reserved 10 to 20;
+}
+
+message OrderedKey {
+  uint64 timestamp_ms = 1;
+  uint32 node_id = 2;
+  uint32 sequence = 3;
+  reserved 10 to 20;
+}
+
+message Predicate {
+  oneof predicate {
+    MatchKeys match_keys = 1;
+    MatchRange match_range = 2;
+    bool match_all = 3;
+  }
+}
+
+message MatchKeys {
+  repeated bytes keys = 1;
+}
+
+message MatchRange {
+  bytes start_key = 1;
+  bytes end_key = 2;
+  bool start_inclusive = 3;
+  bool end_inclusive = 4;
+}
+
+message Selection {
+  uint32 page_size_bytes = 1;
+  uint32 item_limit = 2;
+  bool exclude_values = 3;
+  bytes page_token = 4;
+  reserved 10 to 20;
+}

@@ -1,0 +1,9 @@
+[package]
+name = "flushdb-wal"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+flushdb-types = { path = "../flushdb-types" }
+crc32fast = { workspace = true }
+tracing = { workspace = true }
