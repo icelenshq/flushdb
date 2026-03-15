@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use flushdb_types::{EntryType, IdempotencyToken};
 use flushdb_wal::{
-    segment_filename, SegmentReader, WalConfig, WalEntry, WalWriter,
+    segment_filename, SegmentReader, WalConfig, WalEntry, WalWriter, SEGMENT_HEADER_SIZE,
 };
 
 fn make_entry() -> WalEntry {
@@ -255,6 +255,19 @@ fn test_rotation_creates_consecutive_segment_numbers() {
 }
 
 // === Size Tracking Tests ===
+
+#[test]
+fn test_fresh_writer_total_size_equals_header() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = WalConfig::default();
+    let writer = WalWriter::open(dir.path(), &config).unwrap();
+
+    let size = writer.total_size().unwrap();
+    assert_eq!(
+        size, SEGMENT_HEADER_SIZE as u64,
+        "fresh writer should have exactly one segment containing only the header"
+    );
+}
 
 #[test]
 fn test_total_size_across_segments() {

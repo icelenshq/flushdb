@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use flushdb_types::{CompositeKey, EntryType, EntryValue};
 
-use flushdb_engine::cache::{BlockCache, BlockCacheKey, CacheConfig, CachedBlock};
+use flushdb_engine::cache::{BlockCache, BlockCacheKey, CacheConfig, CacheStats, CachedBlock};
 use flushdb_engine::sstable::BlockEntry;
 
 fn make_entry(record_id: &str, item_key: &str, value: &[u8]) -> BlockEntry {
@@ -109,6 +109,7 @@ fn test_invalidate_sst_removes_all_blocks() {
     }
 
     cache.invalidate_sst("sst-A");
+    cache.run_pending_tasks();
 
     for i in 0..10u64 {
         let key = make_key("sst-A", i * 4096);
@@ -137,6 +138,7 @@ fn test_invalidate_sst_preserves_other_ssts() {
     );
 
     cache.invalidate_sst("sst-A");
+    cache.run_pending_tasks();
 
     assert!(cache.get(&key_a).is_none());
     assert!(cache.get(&key_b).is_some());
@@ -209,4 +211,26 @@ fn test_default_config() {
     assert_eq!(config.pinned_metadata_capacity, 1000);
     assert!(config.enable_continuity_tracking);
     assert_eq!(config.get_budget_per_read, 8);
+}
+
+#[test]
+fn test_stats_reflects_inserted_blocks() {
+    let config = CacheConfig::default();
+    let cache = BlockCache::new(&config);
+
+    let block1 = CachedBlock::new(vec![make_entry("rec1", "item1", b"hello")]);
+    let block2 = CachedBlock::new(vec![
+        make_entry("rec2", "item2", b"world!"),
+        make_entry("rec3", "item3", b"data"),
+    ]);
+    let expected_weight = (block1.estimated_size() + block2.estimated_size()) as u64;
+
+    cache.insert(make_key("sst-1", 0), block1);
+    cache.insert(make_key("sst-1", 4096), block2);
+    cache.run_pending_tasks();
+
+    let stats: CacheStats = cache.stats();
+    assert_eq!(stats.entry_count, 2);
+    assert_eq!(stats.weighted_size_bytes, expected_weight);
+    assert!(stats.weighted_size_bytes > 0);
 }

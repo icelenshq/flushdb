@@ -232,6 +232,60 @@ fn test_iter_from_skips_early_entries() {
     assert_eq!(entries[0].sequence_number, 50);
 }
 
+// === Cross-Segment Iterator Tests ===
+
+#[test]
+fn test_iter_yields_entries_across_segments() {
+    let dir = tempfile::tempdir().unwrap();
+    let seqs = write_entries_with_rotation(dir.path(), 200);
+
+    let reader = WalReader::open(dir.path()).unwrap();
+    assert!(
+        reader.segment_count() >= 3,
+        "expected 3+ segments to validate cross-segment iteration"
+    );
+
+    let iter_entries: Vec<WalEntry> = reader.iter().map(|r| r.unwrap()).collect();
+    assert_eq!(iter_entries.len(), 200);
+    for (i, entry) in iter_entries.iter().enumerate() {
+        assert_eq!(
+            entry.sequence_number, seqs[i],
+            "sequence mismatch at index {i}"
+        );
+    }
+}
+
+#[test]
+fn test_iter_from_across_segments() {
+    let dir = tempfile::tempdir().unwrap();
+    let seqs = write_entries_with_rotation(dir.path(), 200);
+
+    let reader = WalReader::open(dir.path()).unwrap();
+    assert!(
+        reader.segment_count() >= 3,
+        "expected 3+ segments to validate cross-segment iter_from"
+    );
+
+    let mid_seq = seqs[seqs.len() / 2];
+    let iter_entries: Vec<WalEntry> = reader.iter_from(mid_seq).map(|r| r.unwrap()).collect();
+
+    assert!(
+        !iter_entries.is_empty(),
+        "iter_from should yield entries from midpoint onward"
+    );
+    assert!(
+        iter_entries
+            .iter()
+            .all(|e| e.sequence_number >= mid_seq),
+        "all entries should have sequence >= mid_seq"
+    );
+    assert_eq!(iter_entries[0].sequence_number, mid_seq);
+
+    // Verify the count matches what replay_from returns
+    let replay_entries = reader.replay_from(mid_seq).unwrap();
+    assert_eq!(iter_entries.len(), replay_entries.len());
+}
+
 // === Corruption Handling Tests ===
 
 #[test]

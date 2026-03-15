@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 
 use bytes::Bytes;
 use flushdb_engine::skiplist::SkipList;
-use flushdb_types::{CompositeKey, EntryType, IdempotencyToken, MemtableEntry};
+use flushdb_types::{CompositeKey, EntryType, IdempotencyToken, MemtableEntry, MAX_RECORD_ID_LEN};
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 
@@ -467,6 +467,19 @@ fn test_iter_with_duplicate_keys() {
     assert_eq!(collected[0].0, 3);
     assert_eq!(collected[1].0, 2);
     assert_eq!(collected[2].0, 1);
+}
+
+#[test]
+fn test_scan_record_returns_empty_iterator_for_oversized_record_id() {
+    let mut sl = SkipList::new();
+    sl.insert(make_entry("rec1", "key1", "val", EntryType::Put));
+
+    let oversized_record_id = vec![b'x'; MAX_RECORD_ID_LEN + 1];
+    let collected: Vec<_> = sl.scan_record(&oversized_record_id).collect();
+    assert!(
+        collected.is_empty(),
+        "scan_record with oversized record_id should return empty iterator"
+    );
 }
 
 #[test]

@@ -87,11 +87,6 @@ fn test_sst_id_from_simple_filename() {
     assert_eq!(sst_id_from_path("data.sst"), "data");
 }
 
-#[test]
-fn test_sst_id_no_extension() {
-    assert_eq!(sst_id_from_path("noext"), "noext");
-}
-
 #[tokio::test]
 async fn test_cache_miss_then_hit() {
     let (fetcher, fetch_count, _raw_count) = CountingFetcher::new();

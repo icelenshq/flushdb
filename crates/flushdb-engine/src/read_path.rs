@@ -378,9 +378,9 @@ impl<'a> ReadPath<'a> {
 
         Ok(RangeReadResult {
             entries,
+            is_partial: next_page_token.is_some(),
             next_page_token,
             total_bytes,
-            is_partial: false,
         })
     }
 

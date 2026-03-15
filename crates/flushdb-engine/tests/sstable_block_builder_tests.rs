@@ -524,3 +524,45 @@ fn test_reset_clears_state() {
     assert!(finished.record_ids.contains(&bytes::Bytes::from_static(b"new_rec")));
     assert_eq!(finished.idempotency_tokens.len(), 1);
 }
+
+#[test]
+fn test_reset_clears_dedup_state_for_same_record_id() {
+    let mut builder = BlockBuilder::new(4096);
+    let key1 = make_key(b"rec1", b"item1");
+
+    builder.add_entry(
+        &key1,
+        b"value1",
+        b"meta1",
+        EntryType::Put,
+        1,
+        IdempotencyToken::none(),
+    );
+
+    let finished_before = builder.finish(CompressionType::None).unwrap();
+
+    let mut builder = BlockBuilder::new(4096);
+    builder.reset();
+
+    let key2 = make_key(b"rec1", b"item2");
+    builder.add_entry(
+        &key2,
+        b"value2",
+        b"meta2",
+        EntryType::Put,
+        2,
+        IdempotencyToken::none(),
+    );
+
+    let finished_after = builder.finish(CompressionType::None).unwrap();
+
+    let entries_before = decode_block(&finished_before.data, CompressionType::None).unwrap();
+    let entries_after = decode_block(&finished_after.data, CompressionType::None).unwrap();
+
+    assert_eq!(entries_before[0].composite_key.record_id(), b"rec1");
+    assert_eq!(
+        entries_after[0].composite_key.record_id(),
+        b"rec1",
+        "first entry after reset must have full record_id, not a dedup zero-length"
+    );
+}

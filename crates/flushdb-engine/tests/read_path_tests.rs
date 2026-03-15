@@ -303,6 +303,28 @@ async fn test_range_read_item_limit() {
 
     assert_eq!(result.entries.len(), 3);
     assert!(result.next_page_token.is_some());
+    assert!(result.is_partial, "paginated result should be marked partial");
+}
+
+#[tokio::test]
+async fn test_range_read_is_partial_false_when_complete() {
+    let (_dir, fetcher) = test_fetcher();
+    let read_path = ReadPath::new(&fetcher);
+
+    let mut list = new_list();
+    for i in 0..3 {
+        list.insert(make_put("r1", &format!("k{i:02}"), &format!("v{i}")))
+            .unwrap();
+    }
+
+    let result = read_path
+        .range_read(b"r1", None, None, RangeReadOptions::default(), &list, &[])
+        .await
+        .unwrap();
+
+    assert_eq!(result.entries.len(), 3);
+    assert!(result.next_page_token.is_none());
+    assert!(!result.is_partial, "complete result should not be marked partial");
 }
 
 #[tokio::test]

@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use flushdb_engine::memtable::MemtableConfig;
 use flushdb_engine::sstable::BlockEntry;
-use flushdb_engine::{Memtable, MergeEntry, MergeIterator, VecSource};
+use flushdb_engine::{Memtable, MergeEntry, MergeIterator, MergeSource, VecSource};
 use flushdb_types::{CompositeKey, EntryType, EntryValue, IdempotencyToken, MemtableEntry};
 
 fn make_merge_entry(
@@ -603,8 +603,10 @@ fn test_merge_entry_from_block_entry_blob_ref() {
 
     let merge_entry = MergeEntry::from_block_entry(block_entry);
 
+    assert_eq!(merge_entry.entry_type, EntryType::Put);
     assert_eq!(merge_entry.composite_key, key);
-    // BlobRef conversion stores empty bytes (future phases handle blob reads)
+    // BlobRef conversion produces empty value bytes. This is intentional for
+    // pre-blob-support phases; actual blob reads will be resolved in future phases.
     assert!(merge_entry.value.is_empty());
     assert_eq!(merge_entry.metadata.as_ref(), b"blob_meta");
     assert_eq!(merge_entry.sequence_number, 55);
@@ -875,6 +877,34 @@ fn test_merge_alternating_dedup_and_unique() {
     assert_eq!(results[3].sequence_number, 7);
     assert_key(&results[4], "e", "k");
     assert_eq!(results[4].sequence_number, 6);
+}
+
+// === VecSource Direct Tests ===
+
+#[test]
+fn test_vec_source_peek_on_empty_returns_none() {
+    let source = VecSource::new(vec![], 42);
+    assert!(source.peek().is_none());
+}
+
+#[test]
+fn test_vec_source_advance_past_end_does_not_panic() {
+    let mut source = VecSource::new(vec![make_put("a", "k", 1)], 0);
+    source.advance();
+    assert!(source.peek().is_none());
+    // Advancing again past the end should not panic
+    source.advance();
+    source.advance();
+    assert!(source.peek().is_none());
+}
+
+#[test]
+fn test_vec_source_preserves_source_id() {
+    let source = VecSource::new(vec![], 99);
+    assert_eq!(source.source_id(), 99);
+
+    let source2 = VecSource::new(vec![make_put("a", "k", 1)], 7);
+    assert_eq!(source2.source_id(), 7);
 }
 
 // === MergeEntry::from_skip_node Tests ===

@@ -467,6 +467,37 @@ async fn test_wal_size_reflects_total_segment_size() {
 // === Flush Trigger Tests ===
 
 #[tokio::test]
+async fn test_flush_triggers_oldest_pinned_generation() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = WalConfig::default();
+    let mut manager = WalManager::open(dir.path(), config).unwrap();
+
+    // Write entries across two generations
+    let notif = manager.append(make_entry(), 5).unwrap();
+    notif.await.unwrap().unwrap();
+    let notif = manager.append(make_entry(), 10).unwrap();
+    notif.await.unwrap().unwrap();
+
+    let triggers = manager.flush_triggers().unwrap();
+    // oldest_pinned_generation picks the smallest generation from the oldest dirty segment.
+    // Both generations land on the same segment, and generations_for_segment returns sorted IDs,
+    // so the first (smallest) is 5.
+    assert_eq!(triggers.oldest_pinned_generation, Some(5));
+
+    // After flushing generation 5, the oldest pinned generation should become 10
+    manager.mark_generation_flushed(5).unwrap();
+    let triggers = manager.flush_triggers().unwrap();
+    assert_eq!(triggers.oldest_pinned_generation, Some(10));
+
+    // After flushing generation 10, no pinned generations remain
+    manager.mark_generation_flushed(10).unwrap();
+    let triggers = manager.flush_triggers().unwrap();
+    assert_eq!(triggers.oldest_pinned_generation, None);
+
+    manager.shutdown().await.unwrap();
+}
+
+#[tokio::test]
 async fn test_flush_triggers_none_when_healthy() {
     let dir = tempfile::tempdir().unwrap();
     let config = WalConfig::default();

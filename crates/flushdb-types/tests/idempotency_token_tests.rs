@@ -160,6 +160,28 @@ fn test_is_within_drift_exact_boundary() {
 }
 
 #[test]
+fn test_is_within_drift_future_exact_boundary() {
+    let now_ms = 100_000;
+    let max_drift_ms = 5_000;
+    let token = IdempotencyToken::new(now_ms + max_drift_ms);
+    assert!(
+        token.is_within_drift(now_ms, max_drift_ms),
+        "token at exactly now + max_drift should be within drift"
+    );
+}
+
+#[test]
+fn test_is_within_drift_future_just_beyond_boundary() {
+    let now_ms = 100_000;
+    let max_drift_ms = 5_000;
+    let token = IdempotencyToken::new(now_ms + max_drift_ms + 1);
+    assert!(
+        !token.is_within_drift(now_ms, max_drift_ms),
+        "token at now + max_drift + 1 should be outside drift"
+    );
+}
+
+#[test]
 fn test_as_bytes_none_is_all_zeros() {
     let none = IdempotencyToken::none();
     assert!(none.as_bytes().iter().all(|&b| b == 0));

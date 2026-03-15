@@ -55,6 +55,13 @@ fn test_sort_by_sequence() {
 }
 
 #[test]
+fn test_sort_node_id_dominates_sequence() {
+    let a = OrderedKey::new(1000, 2, 0);
+    let b = OrderedKey::new(1000, 1, 999);
+    assert!(a > b, "higher node_id must sort after lower node_id regardless of sequence");
+}
+
+#[test]
 fn test_sort_timestamp_dominates() {
     let a = OrderedKey::new(100, 999, 999);
     let b = OrderedKey::new(101, 0, 0);

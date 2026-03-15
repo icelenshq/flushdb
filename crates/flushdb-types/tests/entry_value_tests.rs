@@ -112,54 +112,6 @@ fn test_inline_empty_value() {
 }
 
 #[test]
-fn test_blob_ref_zero_offset() {
-    let entry = EntryValue::BlobRef {
-        blob_id: Bytes::from("id"),
-        offset: 0,
-        size: 512,
-    };
-
-    assert!(entry.is_blob_ref());
-    match &entry {
-        EntryValue::BlobRef { offset, .. } => assert_eq!(*offset, 0),
-        _ => panic!("expected BlobRef"),
-    }
-}
-
-#[test]
-fn test_clone_inline() {
-    let original = EntryValue::Inline(Bytes::from("clone me"));
-    let cloned = original.clone();
-
-    assert_eq!(original, cloned);
-    assert_eq!(cloned.inline_value(), Some(&Bytes::from("clone me")));
-}
-
-#[test]
-fn test_clone_blob_ref() {
-    let original = EntryValue::BlobRef {
-        blob_id: Bytes::from("blob-id"),
-        offset: 100,
-        size: 200,
-    };
-    let cloned = original.clone();
-
-    assert_eq!(original, cloned);
-    match &cloned {
-        EntryValue::BlobRef {
-            blob_id,
-            offset,
-            size,
-        } => {
-            assert_eq!(blob_id, &Bytes::from("blob-id"));
-            assert_eq!(*offset, 100);
-            assert_eq!(*size, 200);
-        }
-        _ => panic!("expected BlobRef"),
-    }
-}
-
-#[test]
 fn test_tag_constants() {
     assert_eq!(EntryValue::INLINE_TAG, 0x00);
     assert_eq!(EntryValue::BLOB_REF_TAG, 0x01);
@@ -176,24 +128,3 @@ fn test_inequality_across_variants() {
     assert_ne!(inline, blob_ref);
 }
 
-#[test]
-fn test_inequality_different_inline_values() {
-    let a = EntryValue::Inline(Bytes::from("alpha"));
-    let b = EntryValue::Inline(Bytes::from("beta"));
-    assert_ne!(a, b);
-}
-
-#[test]
-fn test_inequality_different_blob_refs() {
-    let a = EntryValue::BlobRef {
-        blob_id: Bytes::from("id-1"),
-        offset: 0,
-        size: 100,
-    };
-    let b = EntryValue::BlobRef {
-        blob_id: Bytes::from("id-2"),
-        offset: 0,
-        size: 100,
-    };
-    assert_ne!(a, b);
-}

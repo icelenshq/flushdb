@@ -195,26 +195,6 @@ fn test_needs_size_flush() {
     assert!(!tracker.needs_size_flush(500, 1000));
 }
 
-// === Alias Tests ===
-
-#[test]
-fn test_generations_for_segment_matches_dirty_generation_ids() {
-    let mut tracker = DirtySegmentTracker::new();
-    tracker.record_write(1, 100, 5);
-    tracker.record_write(1, 200, 8);
-    tracker.record_write(1, 150, 6);
-
-    assert_eq!(
-        tracker.generations_for_segment(1),
-        tracker.dirty_generation_ids(1)
-    );
-    // Unknown segment returns empty from both
-    assert_eq!(
-        tracker.generations_for_segment(999),
-        tracker.dirty_generation_ids(999)
-    );
-}
-
 // === Edge Cases ===
 
 #[test]

@@ -435,7 +435,7 @@ async fn test_scan_single_record() {
 // --- Metadata Tests ---
 
 #[tokio::test]
-async fn test_key_range() {
+async fn test_key_range_matches_first_and_last_block_keys() {
     let tmp = TempDir::new().unwrap();
     let config = SstConfig::default()
         .with_compression(CompressionType::None)
@@ -446,19 +446,19 @@ async fn test_key_range() {
     let mut reader = write_and_open_with_dir(tmp.path(), &config, entries).await;
     reader.load_metadata().await.unwrap();
 
+    let block_count = reader.block_count().unwrap();
+    assert!(block_count > 1, "need multiple blocks for this test, got {block_count}");
+
     let (min, max) = reader.key_range().unwrap().unwrap();
 
-    // min should be the first_key of the first block = first entry's key
     assert_eq!(min, &first_key, "min key should match first entry");
-    // max should be the first_key of the last block (not last entry)
-    // With 50 entries and 128-byte blocks, last block's first_key comes from somewhere
-    // in the middle of the entries. Just verify it's >= min and a valid key.
-    assert!(
-        max.as_bytes() >= min.as_bytes(),
-        "max key should be >= min key"
+
+    let last_block_entries = reader.get_block(block_count - 1).await.unwrap();
+    let last_block_first_key = &last_block_entries[0].composite_key;
+    assert_eq!(
+        max, last_block_first_key,
+        "max key should equal the first entry's key of the last block"
     );
-    // Also verify block_count > 1 to confirm we have multiple blocks
-    assert!(reader.block_count().unwrap() > 1);
 }
 
 #[tokio::test]
@@ -697,4 +697,34 @@ async fn test_get_without_metadata_errors() {
         }
         other => panic!("expected InvalidArgument, got: {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn test_get_block_without_metadata_errors() {
+    let tmp = TempDir::new().unwrap();
+    let config = default_config();
+    let entries = make_entries(5);
+
+    let reader = write_and_open_with_dir(tmp.path(), &config, entries).await;
+
+    let result = reader.get_block(0).await;
+    assert!(
+        matches!(result, Err(FlushError::InvalidArgument { .. })),
+        "get_block without load_metadata should yield InvalidArgument"
+    );
+}
+
+#[tokio::test]
+async fn test_key_range_without_metadata_errors() {
+    let tmp = TempDir::new().unwrap();
+    let config = default_config();
+    let entries = make_entries(5);
+
+    let reader = write_and_open_with_dir(tmp.path(), &config, entries).await;
+
+    let result = reader.key_range();
+    assert!(
+        matches!(result, Err(FlushError::InvalidArgument { .. })),
+        "key_range without load_metadata should yield InvalidArgument"
+    );
 }

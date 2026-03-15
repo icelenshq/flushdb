@@ -2,7 +2,7 @@ use bytes::Bytes;
 use tempfile::TempDir;
 
 use flushdb_engine::{
-    CacheConfig, Engine, EngineConfig, FlushConfig, ManifestConfig, MemtableConfig,
+    CacheConfig, Engine, EngineConfig, FlushConfig, Level, ManifestConfig, MemtableConfig,
     CompactionConfig, RangeReadOptions, WriteStallStatus,
 };
 use flushdb_types::{IdempotencyToken, LocalFsBackend};
@@ -727,5 +727,115 @@ async fn test_full_lifecycle() {
                 .unwrap();
             assert_eq!(scan.entries.len(), 20, "record {} should have 20 items", rec);
         }
+    }
+}
+
+#[tokio::test]
+async fn test_maybe_compact_triggers_l0_to_l1() {
+    let dir = TempDir::new().unwrap();
+    let storage_dir = dir.path().join("storage");
+    std::fs::create_dir_all(&storage_dir).unwrap();
+
+    let backend = LocalFsBackend::new(storage_dir);
+    let config = EngineConfig {
+        memtable_config: MemtableConfig {
+            size_threshold: 512,
+            max_frozen_count: 3,
+        },
+        wal_config: WalConfig::default(),
+        flush_config: FlushConfig {
+            sst_config: flushdb_engine::sstable::types::SstConfig::default(),
+            max_frozen_count: 3,
+            flush_trigger_size: 512,
+            flush_trigger_age: std::time::Duration::from_secs(3600),
+        },
+        compaction_config: CompactionConfig {
+            l0_compaction_trigger: 3,
+            ..CompactionConfig::default()
+        },
+        manifest_config: ManifestConfig {
+            base_path: "flushdb".to_string(),
+            ..ManifestConfig::default()
+        },
+        cache_config: CacheConfig::default(),
+        namespace: "compact-ns".to_string(),
+        local_dir: dir.path().to_path_buf(),
+    };
+
+    let mut engine = Engine::open(backend, config).await.unwrap();
+
+    // Write enough data to trigger multiple flushes (each at 512 bytes).
+    // With l0_compaction_trigger = 3, the 4th L0 SSTable triggers L0->L1 compaction
+    // inside flush_frozen -> maybe_compact.
+    for i in 0..200u32 {
+        let key = format!("key{:04}", i);
+        let value = format!("value_{:04}", i);
+        engine
+            .put(
+                b"rec1",
+                key.as_bytes(),
+                Bytes::from(value),
+                Bytes::new(),
+                None,
+            )
+            .await
+            .unwrap();
+    }
+
+    // Flush any remaining active memtable
+    engine.close().await.unwrap();
+
+    // Reopen to verify persistent state
+    let storage_dir = dir.path().join("storage");
+    let backend2 = LocalFsBackend::new(storage_dir);
+    let config2 = EngineConfig {
+        memtable_config: MemtableConfig {
+            size_threshold: 512,
+            max_frozen_count: 3,
+        },
+        wal_config: WalConfig::default(),
+        flush_config: FlushConfig {
+            sst_config: flushdb_engine::sstable::types::SstConfig::default(),
+            max_frozen_count: 3,
+            flush_trigger_size: 512,
+            flush_trigger_age: std::time::Duration::from_secs(3600),
+        },
+        compaction_config: CompactionConfig {
+            l0_compaction_trigger: 3,
+            ..CompactionConfig::default()
+        },
+        manifest_config: ManifestConfig {
+            base_path: "flushdb".to_string(),
+            ..ManifestConfig::default()
+        },
+        cache_config: CacheConfig::default(),
+        namespace: "compact-ns".to_string(),
+        local_dir: dir.path().to_path_buf(),
+    };
+
+    let mut engine2 = Engine::open(backend2, config2).await.unwrap();
+
+    // Compaction should have moved data from L0 to L1
+    let l1_size = engine2.manifest().level_size_bytes(Level::L1);
+    assert!(
+        l1_size > 0,
+        "L1 should have data after compaction, but size is {}",
+        l1_size
+    );
+
+    // Calling maybe_compact on a clean engine should succeed and return empty
+    let results = engine2.maybe_compact().await.unwrap();
+    assert!(
+        results.is_empty(),
+        "no pending compaction after L0->L1 was already done"
+    );
+
+    // Verify all data is still readable after compaction
+    for i in 0..200u32 {
+        let key = format!("key{:04}", i);
+        let expected = format!("value_{:04}", i);
+        let result = engine2.get(b"rec1", key.as_bytes()).await.unwrap();
+        assert!(result.is_some(), "key {} not found after compaction", key);
+        assert_eq!(result.unwrap().value, Bytes::from(expected));
     }
 }

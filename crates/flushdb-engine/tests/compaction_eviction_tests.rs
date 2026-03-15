@@ -80,6 +80,7 @@ fn test_evict_sstable_clears_block_cache() {
     }
 
     evict_sstable(&block_cache, &mut pinned, "sst-a");
+    block_cache.run_pending_tasks();
 
     for i in 0..5u64 {
         assert!(
@@ -118,6 +119,7 @@ fn test_evict_sstable_preserves_other_data() {
     pinned.pin("sst-b".to_string(), make_pinned_metadata());
 
     evict_sstable(&block_cache, &mut pinned, "sst-a");
+    block_cache.run_pending_tasks();
 
     assert!(block_cache.get(&make_key("sst-a", 0)).is_none());
     assert!(block_cache.get(&make_key("sst-b", 0)).is_some());
@@ -150,6 +152,7 @@ fn test_evict_sstables_batch() {
         &mut pinned,
         &["a".to_string(), "b".to_string()],
     );
+    block_cache.run_pending_tasks();
 
     assert!(block_cache.get(&make_key("a", 0)).is_none());
     assert!(block_cache.get(&make_key("b", 0)).is_none());
@@ -198,6 +201,7 @@ fn test_evict_compaction_result() {
     };
 
     evict_compaction_result(&block_cache, &mut pinned, &result);
+    block_cache.run_pending_tasks();
 
     assert!(block_cache.get(&make_key("old-1", 0)).is_none());
     assert!(block_cache.get(&make_key("old-2", 0)).is_none());
