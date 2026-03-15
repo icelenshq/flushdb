@@ -57,6 +57,7 @@ fn test_page_token_encode_decode_round_trip() {
     let token = PageToken {
         last_composite_key: key.clone(),
         last_sequence_number: 12345,
+        avg_item_size_bytes: None,
     };
 
     let encoded = token.encode();
@@ -89,6 +90,7 @@ fn test_page_token_base64_round_trip() {
     let token = PageToken {
         last_composite_key: key.clone(),
         last_sequence_number: 999,
+        avg_item_size_bytes: None,
     };
 
     let b64 = token.to_base64();

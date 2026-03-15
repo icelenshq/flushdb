@@ -31,6 +31,7 @@ pub use memtable::{DedupSet, Memtable, MemtableConfig};
 pub use memtable_list::MemtableList;
 pub use merge_iterator::{MergeEntry, MergeIterator, MergeSource, VecSource};
 pub use range_tombstone::{RangeTombstone, RangeTombstoneIndex};
+pub use cache::{CacheConfig, CacheStats, ReadBudget};
 pub use read_path::{GetResult, PageToken, RangeReadOptions, RangeReadResult, ReadPath};
 pub use recovery::{RecoveryConfig, RecoveryResult, recover};
 pub use skiplist::{SkipListIntoIterator, SkipListIterator, SkipNode};
