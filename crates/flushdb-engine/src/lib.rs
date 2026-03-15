@@ -2,6 +2,7 @@ pub mod arena;
 pub mod memtable;
 pub mod memtable_list;
 pub mod skiplist;
+pub mod sstable;
 mod range_tombstone;
 
 pub use memtable::{DedupSet, Memtable, MemtableConfig};

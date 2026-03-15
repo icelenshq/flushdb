@@ -7,11 +7,18 @@ edition = "2021"
 flushdb-types = { path = "../flushdb-types" }
 flushdb-wal = { path = "../flushdb-wal" }
 bytes = { workspace = true }
+crc32fast = { workspace = true }
 rand = { workspace = true }
 tracing = { workspace = true }
+snap = "1"
+zstd = "0.13"
+ulid = "1"
+async-trait = { workspace = true }
+tokio = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
 flushdb-types = { path = "../flushdb-types" }
 bytes = { workspace = true }
 rand = { workspace = true }
+tokio = { workspace = true }
