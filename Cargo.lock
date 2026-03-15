@@ -1147,6 +1147,7 @@ dependencies = [
  "testcontainers",
  "testcontainers-modules",
  "tokio",
+ "tokio-stream",
  "tonic",
  "tracing",
  "uuid",

@@ -21,4 +21,5 @@ testcontainers-modules = { workspace = true }
 uuid = { workspace = true }
 futures = { workspace = true }
 tonic = { workspace = true }
+tokio-stream = { workspace = true }
 rand = { workspace = true }
