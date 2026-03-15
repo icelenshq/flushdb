@@ -1,4 +1,5 @@
 pub mod conversions;
+pub mod handlers;
 pub mod namespace_config;
 pub mod namespace_manager;
 pub mod observability;
@@ -24,6 +25,7 @@ pub use observability::{
     record_write_latency, set_active_connections, set_namespace_count, set_partition_count,
     update_cache_stats, update_level_stats,
 };
+pub use handlers::FlushDbService;
 pub use namespace_manager::NamespaceManager;
 pub use partition::{Partition, PartitionState};
 pub use partition_router::{LocalPartitionRouter, PartitionRouter};
