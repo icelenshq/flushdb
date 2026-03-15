@@ -1,4 +1,5 @@
 pub mod arena;
+pub mod cache;
 pub mod block_fetcher;
 pub mod compaction;
 pub mod engine;
