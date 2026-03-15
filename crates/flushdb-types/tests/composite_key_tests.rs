@@ -356,3 +356,37 @@ fn test_min_max_key_validation() {
     assert!(CompositeKey::min_key_for_record(b"").is_err());
     assert!(CompositeKey::max_key_for_record(b"").is_err());
 }
+
+#[test]
+fn test_range_tombstone_key_oversized_start_key() {
+    let oversized = vec![b'x'; MAX_ITEM_KEY_LEN]; // 1 prefix byte + 4096 data bytes > MAX
+    let result = CompositeKey::range_tombstone_key(b"rec", &oversized);
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        FlushError::KeyTooLong { field, actual, max } => {
+            assert_eq!(field, "item_key");
+            assert_eq!(actual, 1 + oversized.len());
+            assert_eq!(max, MAX_ITEM_KEY_LEN);
+        }
+        other => panic!("expected KeyTooLong, got: {other:?}"),
+    }
+}
+
+#[test]
+fn test_range_tombstone_key_at_exact_limit() {
+    let exact = vec![b'x'; MAX_ITEM_KEY_LEN - 1]; // 1 prefix + 4095 = 4096 = MAX
+    let result = CompositeKey::range_tombstone_key(b"rec", &exact);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_range_tombstone_key_empty_record_id_rejected() {
+    let result = CompositeKey::range_tombstone_key(b"", b"start");
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        FlushError::InvalidKey { reason } => {
+            assert!(reason.contains("empty"), "got: {reason}");
+        }
+        other => panic!("expected InvalidKey, got: {other:?}"),
+    }
+}

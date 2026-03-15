@@ -49,6 +49,7 @@ fn test_into_skiplist_on_frozen() {
 }
 
 #[test]
+#[cfg_attr(not(debug_assertions), ignore)]
 #[should_panic]
 fn test_into_skiplist_panics_on_active() {
     let mut mt = Memtable::new(MemtableConfig::default(), 1);

@@ -10,11 +10,14 @@ bytes = { workspace = true }
 crc32fast = { workspace = true }
 rand = { workspace = true }
 tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 snap = "1"
 zstd = "0.13"
 ulid = "1"
 async-trait = { workspace = true }
 tokio = { workspace = true }
+tokio-util = "0.7"
 
 [dev-dependencies]
 tempfile = { workspace = true }
