@@ -4,7 +4,31 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+flushdb-types = { path = "../flushdb-types" }
 flushdb-engine = { path = "../flushdb-engine" }
 flushdb-proto = { path = "../flushdb-proto" }
 tonic = { workspace = true }
 tracing = { workspace = true }
+tokio = { workspace = true }
+bytes = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+async-trait = { workspace = true }
+crc32fast = { workspace = true }
+aws-sdk-s3 = { workspace = true }
+aws-config = { workspace = true }
+tracing-subscriber = { workspace = true }
+metrics = { workspace = true }
+metrics-exporter-prometheus = { workspace = true }
+parking_lot = { workspace = true }
+dashmap = { workspace = true }
+fnv = { workspace = true }
+futures = { workspace = true }
+tokio-stream = { workspace = true }
+prost = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+rand = { workspace = true }
+uuid = { workspace = true }
