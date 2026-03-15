@@ -40,7 +40,8 @@ impl<B: StorageBackend + Clone + 'static> Partition<B> {
             base_data_dir.join(format!("{}/partition-{:04}", namespace, partition_id));
         std::fs::create_dir_all(&partition_dir)?;
 
-        let engine_config = config.engine_config(partition_dir.clone());
+        let mut engine_config = config.engine_config(partition_dir.clone());
+        engine_config.namespace = format!("{}/partition-{:04}", namespace, partition_id);
         let engine = Engine::open(backend, engine_config).await?;
 
         Ok(Self {

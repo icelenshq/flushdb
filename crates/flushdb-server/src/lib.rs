@@ -1,5 +1,6 @@
 pub mod conversions;
 pub mod namespace_config;
+pub mod namespace_manager;
 pub mod observability;
 pub mod partition;
 pub mod partition_router;
@@ -23,6 +24,7 @@ pub use observability::{
     record_write_latency, set_active_connections, set_namespace_count, set_partition_count,
     update_cache_stats, update_level_stats,
 };
+pub use namespace_manager::NamespaceManager;
 pub use partition::{Partition, PartitionState};
 pub use partition_router::{LocalPartitionRouter, PartitionRouter};
 pub use s3_backend::S3StorageBackend;
