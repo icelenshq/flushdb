@@ -5,7 +5,7 @@ use flushdb_types::{FlushError, FlushResult};
 
 use super::hash::murmurhash3_x64_128;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum FilterBlock {
     Bloom(BloomFilter),
 }
@@ -116,7 +116,7 @@ impl BloomFilterBuilder {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BloomFilter {
     bits: Vec<u8>,
     num_bits: u64,
