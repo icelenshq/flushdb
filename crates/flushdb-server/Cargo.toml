@@ -1,0 +1,10 @@
+[package]
+name = "flushdb-server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+flushdb-engine = { path = "../flushdb-engine" }
+flushdb-proto = { path = "../flushdb-proto" }
+tonic = { workspace = true }
+tracing = { workspace = true }

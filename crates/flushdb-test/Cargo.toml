@@ -1,0 +1,14 @@
+[package]
+name = "flushdb-test"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+flushdb-types = { path = "../flushdb-types" }
+flushdb-wal = { path = "../flushdb-wal" }
+flushdb-engine = { path = "../flushdb-engine" }
+flushdb-server = { path = "../flushdb-server" }
+flushdb-proto = { path = "../flushdb-proto" }
+tempfile = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
