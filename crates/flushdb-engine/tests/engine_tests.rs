@@ -2,7 +2,7 @@ use bytes::Bytes;
 use tempfile::TempDir;
 
 use flushdb_engine::{
-    Engine, EngineConfig, FlushConfig, ManifestConfig, MemtableConfig,
+    CacheConfig, Engine, EngineConfig, FlushConfig, ManifestConfig, MemtableConfig,
     CompactionConfig, RangeReadOptions, WriteStallStatus,
 };
 use flushdb_types::{IdempotencyToken, LocalFsBackend};
@@ -30,6 +30,7 @@ fn test_config(dir: &TempDir, namespace: &str) -> (EngineConfig, LocalFsBackend)
             base_path: "flushdb".to_string(),
             ..ManifestConfig::default()
         },
+        cache_config: CacheConfig::default(),
         namespace: namespace.to_string(),
         local_dir: dir.path().to_path_buf(),
     };
