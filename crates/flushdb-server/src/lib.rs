@@ -3,6 +3,7 @@ pub mod namespace_config;
 pub mod observability;
 pub mod partition;
 pub mod partition_router;
+pub mod s3_backend;
 pub mod version_generator;
 
 pub use conversions::{
@@ -24,4 +25,5 @@ pub use observability::{
 };
 pub use partition::{Partition, PartitionState};
 pub use partition_router::{LocalPartitionRouter, PartitionRouter};
+pub use s3_backend::S3StorageBackend;
 pub use version_generator::VersionGenerator;
