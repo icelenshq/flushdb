@@ -26,3 +26,4 @@ flushdb-types = { path = "../flushdb-types" }
 bytes = { workspace = true }
 rand = { workspace = true }
 tokio = { workspace = true }
+async-trait = { workspace = true }
