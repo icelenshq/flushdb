@@ -27,3 +27,4 @@ uuid = { version = "1", features = ["v7"] }
 async-trait = "0.1"
 tempfile = "3"
 byteorder = "1"
+moka = { version = "0.12", features = ["sync"] }

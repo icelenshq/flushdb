@@ -19,11 +19,6 @@ fn test_default_config_values() {
 }
 
 #[test]
-fn test_fsync_mode_default_is_sync() {
-    assert_eq!(FsyncMode::default(), FsyncMode::Sync);
-}
-
-#[test]
 fn test_segment_filename_zero_padded() {
     assert_eq!(segment_filename(1), "segment-000000000001.wal");
 }

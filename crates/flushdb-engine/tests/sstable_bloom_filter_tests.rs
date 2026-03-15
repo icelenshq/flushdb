@@ -242,6 +242,18 @@ fn test_builder_estimated_size() {
     );
 }
 
+// ─── Theoretical False Positive Rate ─────────────────────────────────
+
+#[test]
+fn test_false_positive_rate_method_under_threshold() {
+    let filter = build_filter_with_keys(10_000);
+    let fpr = filter.false_positive_rate();
+    assert!(
+        fpr < 0.02,
+        "false_positive_rate() returned {fpr:.6}, expected < 0.02 for 10 bits/key"
+    );
+}
+
 // ─── Hash Distribution ──────────────────────────────────────────────
 
 #[test]

@@ -134,6 +134,19 @@ fn test_overlaps_partial() {
     assert!(index.overlaps(&start, &end), "partially overlapping range must overlap");
 }
 
+#[test]
+fn test_overlaps_empty_index() {
+    let builder = IndexBlockBuilder::new();
+    let index = builder.build();
+
+    let start = key(b"aaa", b"001");
+    let end = key(b"zzz", b"999");
+    assert!(
+        !index.overlaps(&start, &end),
+        "empty index must not overlap with any range"
+    );
+}
+
 // ─── Serialization ──────────────────────────────────────────────────
 
 #[test]

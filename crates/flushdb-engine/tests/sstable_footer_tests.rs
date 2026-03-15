@@ -146,6 +146,22 @@ fn test_header_rejects_short_input() {
     );
 }
 
+#[test]
+fn test_header_rejects_invalid_compression() {
+    let header = SstHeader {
+        compression: CompressionType::None,
+        entry_count: 1,
+    };
+    let mut encoded = header.encode();
+    encoded[6] = 0xFF;
+
+    let result = SstHeader::decode(&encoded);
+    assert!(
+        matches!(result, Err(FlushError::CorruptedData { .. })),
+        "invalid compression byte 0xFF should yield CorruptedData"
+    );
+}
+
 // ─── Key truncation tests ────────────────────────────────────────────
 
 #[test]

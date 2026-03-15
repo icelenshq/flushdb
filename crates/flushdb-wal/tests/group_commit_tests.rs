@@ -198,6 +198,63 @@ async fn test_batch_sync_mode_deferred_fsync() {
     assert!(result.unwrap().is_ok());
 }
 
+// === Submit-After-Shutdown Tests ===
+
+#[tokio::test]
+async fn test_submit_after_loop_exits_returns_error() {
+    let dir = tempfile::tempdir().unwrap();
+    // Use a tiny segment so that a batch of writes triggers rotation,
+    // which will fail once the directory is made read-only.
+    let config = WalConfig {
+        segment_size_target: 64,
+        ..WalConfig::default()
+    };
+    let writer = WalWriter::open(dir.path(), &config).unwrap();
+    let seg = Arc::new(AtomicU64::new(writer.current_segment_number()));
+    let (buffer, handle) = GroupCommitBuffer::new(writer, config, seg);
+
+    // Confirm the loop is alive with a successful write
+    let notif = buffer.submit(make_entry()).unwrap();
+    notif.await.unwrap().unwrap();
+
+    // Make the directory read-only so the next segment rotation fails
+    // when it tries to create a new segment file.
+    let mut perms = std::fs::metadata(dir.path()).unwrap().permissions();
+    perms.set_readonly(true);
+    std::fs::set_permissions(dir.path(), perms.clone()).unwrap();
+
+    // Submit entries until the commit loop hits the I/O error from
+    // rotation and exits, causing subsequent submits to fail.
+    let mut got_submit_error = false;
+    for _ in 0..200 {
+        match buffer.submit(make_entry()) {
+            Err(_) => {
+                got_submit_error = true;
+                break;
+            }
+            Ok(notif) => {
+                // The notification may carry the rotation I/O error.
+                // Once the loop exits, the receiver is dropped and future
+                // try_send calls will return Closed.
+                let _ = notif.await;
+                tokio::task::yield_now().await;
+            }
+        }
+    }
+
+    assert!(
+        got_submit_error,
+        "submit should return an error after the commit loop exits"
+    );
+
+    // Restore permissions so tempdir cleanup succeeds
+    perms.set_readonly(false);
+    std::fs::set_permissions(dir.path(), perms).unwrap();
+
+    // Shutdown may return an error because the loop already exited
+    let _ = handle.shutdown().await;
+}
+
 // === Shutdown Tests ===
 
 #[tokio::test]

@@ -1,3 +1,4 @@
+use bytes::Bytes;
 use flushdb_engine::sstable::dedup_block::{DedupBlock, DedupBlockBuilder};
 use flushdb_types::{FlushError, IdempotencyToken};
 
@@ -178,6 +179,15 @@ fn test_size_bytes_consistent_with_serialized() {
         block.size_bytes(),
         block.serialize().len(),
         "size_bytes() must match actual serialized length"
+    );
+}
+
+#[test]
+fn test_deserialize_rejects_too_short_header() {
+    let result = DedupBlock::deserialize(&Bytes::from_static(&[0u8; 3]));
+    assert!(
+        matches!(result, Err(FlushError::CorruptedData { .. })),
+        "data shorter than 4-byte header must yield CorruptedData"
     );
 }
 

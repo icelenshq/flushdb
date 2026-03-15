@@ -3,7 +3,7 @@ use tempfile::TempDir;
 use flushdb_engine::{
     Level, ManifestConfig, ManifestManager, ManifestUpdate, ManifestUpdateTrigger, SSTableMeta,
 };
-use flushdb_types::LocalFsBackend;
+use flushdb_types::{LocalFsBackend, StorageBackend};
 
 fn setup() -> (TempDir, LocalFsBackend) {
     let dir = TempDir::new().unwrap();
@@ -471,4 +471,69 @@ async fn test_update_rejects_duplicate_add() {
     };
     let result = manager.update(update2).await;
     assert!(result.is_err());
+}
+
+// === prune_old_manifests deletion Tests ===
+
+#[tokio::test]
+async fn test_prune_deletes_manifests_before_second_newest_snapshot() {
+    let (_dir, backend) = setup();
+    let config = ManifestConfig {
+        snapshot_interval: 5,
+        ..ManifestConfig::default()
+    };
+    let mut manager = ManifestManager::new(backend.clone(), "test-ns".into(), config.clone());
+    manager.load_latest().await.unwrap();
+    manager.acquire_writer_epoch().await.unwrap();
+
+    // Generate 20+ manifest updates to produce multiple snapshots.
+    // Initial manifest is ID 0, acquire_writer_epoch creates ID 1,
+    // then each update increments by 1. With snapshot_interval=5,
+    // IDs 5, 10, 15, 20 will be snapshots.
+    for i in 0..20u64 {
+        let meta = test_sst_meta(
+            &format!("sst-prune-{i}"),
+            b"a\x00",
+            b"z\x00",
+            100,
+        );
+        let update = ManifestUpdate {
+            trigger: ManifestUpdateTrigger::Flush,
+            add_sstables: vec![(Level::L0, meta)],
+            remove_sstables: vec![],
+            new_last_flushed_sequence: Some((i + 1) * 10),
+            writer_epoch: manager.writer_epoch,
+            compactor_epoch: manager.compactor_epoch,
+        };
+        manager.update(update).await.unwrap();
+    }
+
+    // Count manifest files before pruning
+    let prefix = format!("flushdb/test-ns/manifests/");
+    let before = backend.list_prefix(&prefix).await.unwrap();
+    let count_before = before.len();
+    assert!(
+        count_before > 10,
+        "should have many manifest files, got {}",
+        count_before
+    );
+
+    let deleted = manager.prune_old_manifests().await.unwrap();
+    assert!(
+        deleted > 0,
+        "prune should have deleted old manifests, but deleted 0"
+    );
+
+    // Verify files are actually gone
+    let after = backend.list_prefix(&prefix).await.unwrap();
+    assert_eq!(
+        after.len(),
+        count_before - deleted,
+        "file count should decrease by the number of pruned manifests"
+    );
+
+    // The latest manifest should still be loadable
+    let mut manager2 = ManifestManager::new(backend, "test-ns".into(), config);
+    let manifest = manager2.load_latest().await.unwrap();
+    assert_eq!(manifest.l0_count(), 20);
 }

@@ -1,6 +1,7 @@
 use flushdb_types::{CompositeKey, FlushResult};
 
 use crate::block_fetcher::BlockFetcher;
+use crate::cache::{CachingBlockFetcher, PinnedMetadata, PinnedMetadataCache, ReadBudget};
 use crate::manifest::types::{Level, ManifestConfig, SSTableMeta};
 use crate::sstable::block_reader::BlockEntry;
 use crate::sstable::bloom_filter::FilterBlock;
@@ -49,6 +50,34 @@ impl SSTableHandle {
             bloom_filter,
             index_block,
         })
+    }
+
+    pub async fn open_with_cache(
+        meta: SSTableMeta,
+        path: String,
+        fetcher: &dyn BlockFetcher,
+        pinned: &mut PinnedMetadataCache,
+    ) -> FlushResult<Self> {
+        if let Some(cached) = pinned.get(&meta.id) {
+            return Ok(Self {
+                meta,
+                path,
+                footer: cached.footer.clone(),
+                bloom_filter: cached.bloom_filter.clone(),
+                index_block: cached.index_block.clone(),
+            });
+        }
+
+        let handle = Self::open(meta, path, fetcher).await?;
+
+        let metadata = PinnedMetadata::new(
+            handle.bloom_filter.clone(),
+            handle.index_block.clone(),
+            handle.footer.clone(),
+        );
+        pinned.pin(handle.meta.id.clone(), metadata);
+
+        Ok(handle)
     }
 
     pub fn may_contain_record(&self, record_id: &[u8]) -> bool {
@@ -137,6 +166,42 @@ impl SSTableHandle {
             }
         }
 
+        Ok(best)
+    }
+
+    pub async fn get_budgeted(
+        &self,
+        key: &CompositeKey,
+        fetcher: &CachingBlockFetcher,
+        budget: &mut ReadBudget,
+    ) -> FlushResult<Option<BlockEntry>> {
+        if !self.may_contain_record(key.record_id()) {
+            return Ok(None);
+        }
+
+        let Some(index_entry) = self.find_block_for_key(key) else {
+            return Ok(None);
+        };
+
+        let entries = fetcher
+            .fetch_block_budgeted(
+                &self.path,
+                index_entry.block_offset,
+                index_entry.block_size,
+                self.footer.compression_type,
+                budget,
+            )
+            .await?;
+
+        let mut best: Option<BlockEntry> = None;
+        for entry in entries {
+            if entry.composite_key == *key {
+                match &best {
+                    Some(b) if b.sequence_number >= entry.sequence_number => {}
+                    _ => best = Some(entry),
+                }
+            }
+        }
         Ok(best)
     }
 

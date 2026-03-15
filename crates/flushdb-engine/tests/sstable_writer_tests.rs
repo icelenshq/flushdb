@@ -571,6 +571,61 @@ async fn test_write_entries_empty_iterator_errors() {
     assert!(matches!(result, Err(FlushError::InvalidArgument { .. })));
 }
 
+// --- BlobRef Handling in write_entries ---
+
+#[tokio::test]
+async fn test_write_entries_substitutes_empty_bytes_for_blob_ref() {
+    use flushdb_engine::sstable::block_reader::BlockEntry;
+    use flushdb_types::EntryValue;
+
+    let tmp = TempDir::new().unwrap();
+    let backend = LocalFsBackend::new(tmp.path());
+    let config = default_config();
+
+    let key = CompositeKey::new(b"rec_blob", b"item_blob").unwrap();
+    let blob_entry = BlockEntry {
+        composite_key: key.clone(),
+        value: EntryValue::BlobRef {
+            blob_id: Bytes::from("blob-abc-123"),
+            offset: 4096,
+            size: 1024,
+        },
+        metadata: Bytes::from("meta"),
+        entry_type: EntryType::Put,
+        sequence_number: 42,
+    };
+
+    let writer = SSTableWriter::new(config.clone());
+    let info = writer
+        .write_entries(&backend, "blob_test.sst", std::iter::once(blob_entry))
+        .await
+        .unwrap();
+
+    assert_eq!(info.entry_count, 1);
+
+    let data = backend.get("blob_test.sst").await.unwrap();
+    let file_size = data.len() as u64;
+    let reader_backend = LocalFsBackend::new(tmp.path());
+    let mut reader = flushdb_engine::sstable::reader::SSTableReader::open(
+        reader_backend,
+        "blob_test.sst".to_string(),
+        file_size,
+    )
+    .await
+    .unwrap();
+    reader.load_metadata().await.unwrap();
+
+    let result = reader.get(&key).await.unwrap().unwrap();
+    assert_eq!(result.composite_key, key);
+    assert_eq!(
+        result.value,
+        EntryValue::Inline(Bytes::new()),
+        "BlobRef values should be stored as empty inline bytes"
+    );
+    assert_eq!(result.metadata, Bytes::from("meta"));
+    assert_eq!(result.sequence_number, 42);
+}
+
 // --- Path Utility Tests ---
 
 #[tokio::test]

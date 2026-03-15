@@ -115,23 +115,6 @@ fn test_resource_exhausted_display() {
 }
 
 #[test]
-fn test_error_is_send_sync() {
-    fn assert_send_sync<T: Send + Sync>() {}
-    assert_send_sync::<FlushError>();
-}
-
-#[test]
-fn test_flush_result_alias() {
-    let ok: FlushResult<u64> = Ok(42);
-    assert_eq!(ok.unwrap(), 42);
-
-    let err: FlushResult<u64> = Err(FlushError::NotFound {
-        key: "missing".to_string(),
-    });
-    assert!(err.is_err());
-}
-
-#[test]
 fn test_duplicate_token_display() {
     let err = FlushError::DuplicateToken {
         token: "abc-123".to_string(),

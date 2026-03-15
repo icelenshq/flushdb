@@ -104,6 +104,24 @@ fn test_insert_overwrites_same_key_same_sequence() {
 }
 
 #[test]
+fn test_get_returns_highest_sequence_regardless_of_insertion_order() {
+    let mut sl = SkipList::new();
+
+    // Insert entries for the same key with non-monotonic sequence numbers
+    let entry1 = make_entry_with_seq("rec1", "key1", "v_seq1", 1);
+    let entry2 = make_entry_with_seq("rec1", "key1", "v_seq3", 3);
+    let entry3 = make_entry_with_seq("rec1", "key1", "v_seq2", 2);
+    sl.insert(entry1);
+    sl.insert(entry2);
+    sl.insert(entry3);
+
+    let key = CompositeKey::new(b"rec1", b"key1").unwrap();
+    let node = sl.get(&key).expect("should find entry with highest seq");
+    assert_eq!(node.sequence_number, 3);
+    assert_eq!(node.value, Bytes::from("v_seq3"));
+}
+
+#[test]
 fn test_get_nonexistent_key() {
     let mut sl = SkipList::new();
     let entry = make_entry("rec1", "key1", "val", EntryType::Put);

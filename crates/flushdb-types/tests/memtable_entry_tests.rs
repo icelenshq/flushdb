@@ -58,6 +58,24 @@ fn test_with_sequence() {
     assert_eq!(entry.sequence_number, 42);
 }
 
+#[test]
+fn test_with_sequence_range_delete() {
+    let entry = MemtableEntry::with_sequence(
+        make_key(b"rec1", b"start_key"),
+        Bytes::from_static(b"end_key"),
+        Bytes::new(),
+        IdempotencyToken::none(),
+        42,
+        EntryType::RangeDelete,
+    );
+    assert_eq!(entry.record_id(), b"rec1");
+    assert_eq!(entry.item_key(), b"start_key");
+    assert!(entry.is_tombstone());
+    assert!(!entry.is_put());
+    assert_eq!(entry.sequence_number, 42);
+    assert_eq!(entry.entry_type, EntryType::RangeDelete);
+}
+
 // Delegation tests
 
 #[test]

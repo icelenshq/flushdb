@@ -447,6 +447,52 @@ fn test_scan_record_does_not_filter_entries_with_higher_seq_than_range_tombstone
     assert_eq!(results[1].value, Bytes::from("v_c"));
 }
 
+// === into_skiplist Tests ===
+
+#[test]
+fn test_into_skiplist_returns_skiplist_with_expected_entries() {
+    let mut mt = new_memtable();
+    mt.insert(make_put("r1", "k1", "v1")).unwrap();
+    mt.insert(make_put("r1", "k2", "v2")).unwrap();
+    mt.insert(make_put("r2", "k1", "v3")).unwrap();
+    mt.freeze();
+
+    let sl = mt.into_skiplist();
+    assert_eq!(sl.len(), 3);
+
+    let key1 = CompositeKey::new(b"r1", b"k1").unwrap();
+    let node1 = sl.get(&key1).expect("should find r1/k1");
+    assert_eq!(node1.value, Bytes::from("v1"));
+
+    let key2 = CompositeKey::new(b"r1", b"k2").unwrap();
+    let node2 = sl.get(&key2).expect("should find r1/k2");
+    assert_eq!(node2.value, Bytes::from("v2"));
+
+    let key3 = CompositeKey::new(b"r2", b"k1").unwrap();
+    let node3 = sl.get(&key3).expect("should find r2/k1");
+    assert_eq!(node3.value, Bytes::from("v3"));
+}
+
+// === range_tombstones Accessor Tests ===
+
+#[test]
+fn test_range_tombstones_accessor_returns_inserted_tombstones() {
+    let mut mt = new_memtable();
+    mt.insert(make_range_delete("r1", "a", "m")).unwrap();
+
+    let index = mt.range_tombstones();
+    assert_eq!(index.len(), 1);
+
+    let tombstones: Vec<_> = index.iter().collect();
+    assert_eq!(tombstones[0].record_id.as_ref(), b"r1");
+    assert_eq!(tombstones[0].start_key.as_ref(), b"a");
+    assert_eq!(tombstones[0].end_key.as_ref(), b"m");
+    assert_eq!(tombstones[0].sequence_number, 1);
+
+    assert!(index.covers(b"r1", b"b", 0));
+    assert!(!index.covers(b"r1", b"z", 0));
+}
+
 // === Oracle Test ===
 
 #[test]

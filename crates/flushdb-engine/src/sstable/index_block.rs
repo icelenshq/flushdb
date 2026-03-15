@@ -54,6 +54,7 @@ impl IndexBlockBuilder {
     }
 }
 
+#[derive(Clone)]
 pub struct IndexBlock {
     entries: Vec<IndexEntry>,
 }

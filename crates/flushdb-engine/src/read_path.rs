@@ -34,16 +34,24 @@ impl GetResult {
 pub struct PageToken {
     pub last_composite_key: CompositeKey,
     pub last_sequence_number: u64,
+    pub avg_item_size_bytes: Option<u32>,
 }
 
 impl PageToken {
     pub fn encode(&self) -> Bytes {
         let key_bytes = self.last_composite_key.as_bytes();
         let key_len = key_bytes.len() as u32;
-        let mut buf = Vec::with_capacity(4 + key_bytes.len() + 8);
+        let mut buf = Vec::with_capacity(4 + key_bytes.len() + 8 + 5);
         buf.extend_from_slice(&key_len.to_le_bytes());
         buf.extend_from_slice(key_bytes);
         buf.extend_from_slice(&self.last_sequence_number.to_le_bytes());
+        match self.avg_item_size_bytes {
+            Some(avg) => {
+                buf.push(1u8);
+                buf.extend_from_slice(&avg.to_le_bytes());
+            }
+            None => buf.push(0u8),
+        }
         Bytes::from(buf)
     }
 
@@ -61,9 +69,22 @@ impl PageToken {
         }
         let key = CompositeKey::from_bytes(Bytes::copy_from_slice(&data[4..4 + key_len]))?;
         let seq = u64::from_le_bytes(data[4 + key_len..4 + key_len + 8].try_into().unwrap());
+        let avg_pos = 4 + key_len + 8;
+        let avg_item_size_bytes = if avg_pos < data.len() && data[avg_pos] == 1 {
+            if avg_pos + 5 <= data.len() {
+                Some(u32::from_le_bytes(
+                    data[avg_pos + 1..avg_pos + 5].try_into().unwrap(),
+                ))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         Ok(Self {
             last_composite_key: key,
             last_sequence_number: seq,
+            avg_item_size_bytes,
         })
     }
 
@@ -104,6 +125,7 @@ pub struct RangeReadResult {
     pub entries: Vec<MergeEntry>,
     pub next_page_token: Option<PageToken>,
     pub total_bytes: usize,
+    pub is_partial: bool,
 }
 
 // --- RangeTombstoneCollector ---
@@ -338,9 +360,17 @@ impl<'a> ReadPath<'a> {
 
         // Step 4: Build page token
         let next_page_token = if !iter.is_exhausted() {
-            entries.last().map(|last| PageToken {
-                last_composite_key: last.composite_key.clone(),
-                last_sequence_number: last.sequence_number,
+            entries.last().map(|last| {
+                let avg = if !entries.is_empty() && total_bytes > 0 {
+                    Some((total_bytes / entries.len()) as u32)
+                } else {
+                    None
+                };
+                PageToken {
+                    last_composite_key: last.composite_key.clone(),
+                    last_sequence_number: last.sequence_number,
+                    avg_item_size_bytes: avg,
+                }
             })
         } else {
             None
@@ -348,6 +378,7 @@ impl<'a> ReadPath<'a> {
 
         Ok(RangeReadResult {
             entries,
+            is_partial: next_page_token.is_some(),
             next_page_token,
             total_bytes,
         })

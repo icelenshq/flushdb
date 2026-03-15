@@ -712,6 +712,25 @@ fn test_all_range_tombstones_aggregates_active_and_frozen() {
 
     let tombstones = list.all_range_tombstones();
     assert_eq!(tombstones.len(), 2);
+
+    // The active memtable's tombstone is returned first (from all_range_tombstones ordering)
+    let active_ts = tombstones
+        .iter()
+        .find(|ts| ts.start_key.as_ref() == b"m")
+        .expect("should find the active tombstone");
+    assert_eq!(active_ts.record_id.as_ref(), b"r1");
+    assert_eq!(active_ts.start_key.as_ref(), b"m");
+    assert_eq!(active_ts.end_key.as_ref(), b"z");
+    assert_eq!(active_ts.sequence_number, 2);
+
+    let frozen_ts = tombstones
+        .iter()
+        .find(|ts| ts.start_key.as_ref() == b"a")
+        .expect("should find the frozen tombstone");
+    assert_eq!(frozen_ts.record_id.as_ref(), b"r1");
+    assert_eq!(frozen_ts.start_key.as_ref(), b"a");
+    assert_eq!(frozen_ts.end_key.as_ref(), b"m");
+    assert_eq!(frozen_ts.sequence_number, 1);
 }
 
 // === scan_all_with_tombstones Tests ===
@@ -745,6 +764,27 @@ fn test_scan_all_with_tombstones_deduplicates_across_memtables() {
 
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].value, Bytes::from("new"));
+}
+
+// === scan_all_with_tombstones Across Active + Frozen ===
+
+#[test]
+fn test_scan_all_with_tombstones_delete_in_active_shadows_put_in_frozen() {
+    let mut list = new_list();
+    list.insert(make_put("r1", "k1", "old_val")).unwrap();
+    list.freeze_active().unwrap();
+    list.insert(make_delete("r1", "k1")).unwrap();
+
+    let start = CompositeKey::new(b"r1", b"k1").unwrap();
+    let end = CompositeKey::new(b"r1", b"k2").unwrap();
+    let results = list.scan_all_with_tombstones(&start, &end);
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].entry_type, EntryType::Delete);
+    assert_eq!(
+        results[0].composite_key,
+        CompositeKey::new(b"r1", b"k1").unwrap()
+    );
 }
 
 // === Accessor Tests ===

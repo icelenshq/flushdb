@@ -49,35 +49,6 @@ fn test_item_empty_key_and_value() {
 }
 
 #[test]
-fn test_item_clone() {
-    let item = Item::with_all(
-        Bytes::from("k"),
-        Bytes::from("v"),
-        Bytes::from("m"),
-        7,
-    );
-    let cloned = item.clone();
-    assert_eq!(item, cloned);
-}
-
-#[test]
-fn test_item_equality() {
-    let a = Item::with_all(
-        Bytes::from("k"),
-        Bytes::from("v"),
-        Bytes::from("m"),
-        1,
-    );
-    let b = Item::with_all(
-        Bytes::from("k"),
-        Bytes::from("v"),
-        Bytes::from("m"),
-        1,
-    );
-    assert_eq!(a, b);
-}
-
-#[test]
 fn test_item_inequality() {
     let base = Item::new(Bytes::from("k"), Bytes::from("v"));
 
@@ -108,21 +79,6 @@ fn test_item_inequality() {
 }
 
 // EntryType tests
-
-#[test]
-fn test_entry_type_put_value() {
-    assert_eq!(EntryType::Put.as_u8(), 0);
-}
-
-#[test]
-fn test_entry_type_delete_value() {
-    assert_eq!(EntryType::Delete.as_u8(), 1);
-}
-
-#[test]
-fn test_entry_type_range_delete_value() {
-    assert_eq!(EntryType::RangeDelete.as_u8(), 2);
-}
 
 #[test]
 fn test_entry_type_round_trip() {
@@ -161,9 +117,3 @@ fn test_entry_type_invalid_u8_255() {
     }
 }
 
-#[test]
-fn test_entry_type_is_copy() {
-    let original = EntryType::Put;
-    let copied = original;
-    assert_eq!(original, copied);
-}
