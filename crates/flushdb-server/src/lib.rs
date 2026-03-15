@@ -1,3 +1,4 @@
+pub mod config;
 pub mod conversions;
 pub mod handlers;
 pub mod namespace_config;
@@ -6,6 +7,7 @@ pub mod observability;
 pub mod partition;
 pub mod partition_router;
 pub mod s3_backend;
+pub mod server;
 pub mod version_generator;
 
 pub use conversions::{
@@ -25,7 +27,9 @@ pub use observability::{
     record_write_latency, set_active_connections, set_namespace_count, set_partition_count,
     update_cache_stats, update_level_stats,
 };
+pub use config::ServerConfig;
 pub use handlers::FlushDbService;
+pub use server::FlushDbServer;
 pub use namespace_manager::NamespaceManager;
 pub use partition::{Partition, PartitionState};
 pub use partition_router::{LocalPartitionRouter, PartitionRouter};
