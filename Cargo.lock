@@ -218,8 +218,11 @@ dependencies = [
 name = "flushdb-wal"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "crc32fast",
  "flushdb-types",
+ "tempfile",
+ "tokio",
  "tracing",
 ]
 
