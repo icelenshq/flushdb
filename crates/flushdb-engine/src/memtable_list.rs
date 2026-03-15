@@ -4,6 +4,7 @@ use std::time::Duration;
 use flushdb_types::{CompositeKey, EntryType, FlushError, FlushResult, MemtableEntry};
 
 use crate::memtable::{Memtable, MemtableConfig};
+use crate::range_tombstone::RangeTombstone;
 
 pub struct MemtableList {
     active: Memtable,
@@ -139,6 +140,64 @@ impl MemtableList {
 
     pub fn next_sequence_number(&self) -> u64 {
         self.active.next_sequence_number()
+    }
+
+    pub fn active(&self) -> &Memtable {
+        &self.active
+    }
+
+    pub fn frozen(&self) -> &[Memtable] {
+        &self.frozen
+    }
+
+    pub fn range_tombstone_covers(
+        &self,
+        record_id: &[u8],
+        item_key: &[u8],
+        entry_sequence: u64,
+    ) -> bool {
+        if self.active.range_tombstones().covers(record_id, item_key, entry_sequence) {
+            return true;
+        }
+        for frozen_mt in &self.frozen {
+            if frozen_mt.range_tombstones().covers(record_id, item_key, entry_sequence) {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn all_range_tombstones(&self) -> Vec<RangeTombstone> {
+        let mut tombstones = Vec::new();
+        for ts in self.active.range_tombstones().iter() {
+            tombstones.push(ts.clone());
+        }
+        for frozen_mt in &self.frozen {
+            for ts in frozen_mt.range_tombstones().iter() {
+                tombstones.push(ts.clone());
+            }
+        }
+        tombstones
+    }
+
+    pub fn scan_all_with_tombstones(
+        &self,
+        start: &CompositeKey,
+        end: &CompositeKey,
+    ) -> Vec<MemtableEntry> {
+        let mut all: Vec<MemtableEntry> = Vec::new();
+        all.extend(self.active.scan_with_tombstones(start, end));
+        for frozen_mt in &self.frozen {
+            all.extend(frozen_mt.scan_with_tombstones(start, end));
+        }
+        // Sort by (key ASC, seq DESC) for merge iterator
+        all.sort_by(|a, b| match a.composite_key.cmp(&b.composite_key) {
+            Ordering::Equal => b.sequence_number.cmp(&a.sequence_number),
+            other => other,
+        });
+        // Dedup: keep only the highest-seq entry per key
+        all.dedup_by(|b, a| a.composite_key == b.composite_key);
+        all
     }
 }
 

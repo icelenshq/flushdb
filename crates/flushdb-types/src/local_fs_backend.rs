@@ -7,6 +7,7 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use crate::error::{FlushError, FlushResult};
 use crate::storage_backend::StorageBackend;
 
+#[derive(Clone)]
 pub struct LocalFsBackend {
     base_dir: PathBuf,
 }

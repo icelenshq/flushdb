@@ -644,3 +644,128 @@ fn test_delete_in_active_shadows_put_in_frozen_scan_record() {
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].value, Bytes::from("v2"));
 }
+
+// === Range Tombstone Coverage Tests ===
+
+fn make_range_delete(record: &str, start_key: &str, end_key: &str) -> MemtableEntry {
+    let key = CompositeKey::range_tombstone_key(record.as_bytes(), start_key.as_bytes()).unwrap();
+    MemtableEntry::new(
+        key,
+        Bytes::from(end_key.to_string()),
+        Bytes::new(),
+        IdempotencyToken::none(),
+        EntryType::RangeDelete,
+    )
+}
+
+#[test]
+fn test_range_tombstone_covers_key_in_range() {
+    let mut list = new_list();
+    let put_seq = list.insert(make_put("r1", "b", "v")).unwrap();
+    list.insert(make_range_delete("r1", "a", "z")).unwrap();
+
+    assert!(list.range_tombstone_covers(b"r1", b"b", put_seq));
+}
+
+#[test]
+fn test_range_tombstone_does_not_cover_newer_entry() {
+    let mut list = new_list();
+    list.insert(make_range_delete("r1", "a", "z")).unwrap();
+    let put_seq = list.insert(make_put("r1", "b", "v")).unwrap();
+
+    // The put has a higher sequence than the tombstone, so it should NOT be covered
+    assert!(!list.range_tombstone_covers(b"r1", b"b", put_seq));
+}
+
+#[test]
+fn test_range_tombstone_covers_across_frozen() {
+    let mut list = new_list();
+    list.insert(make_range_delete("r1", "a", "z")).unwrap();
+    list.freeze_active().unwrap();
+
+    // New entry in active memtable with seq=1 — tombstone in frozen has seq=1 too but
+    // since the tombstone needs seq > entry_seq to cover, let's use seq 0 as the entry_seq
+    assert!(list.range_tombstone_covers(b"r1", b"m", 0));
+}
+
+#[test]
+fn test_range_tombstone_does_not_cover_different_record() {
+    let mut list = new_list();
+    list.insert(make_range_delete("r1", "a", "z")).unwrap();
+    assert!(!list.range_tombstone_covers(b"r2", b"b", 0));
+}
+
+// === all_range_tombstones Tests ===
+
+#[test]
+fn test_all_range_tombstones_empty() {
+    let list = new_list();
+    assert!(list.all_range_tombstones().is_empty());
+}
+
+#[test]
+fn test_all_range_tombstones_aggregates_active_and_frozen() {
+    let mut list = new_list();
+    list.insert(make_range_delete("r1", "a", "m")).unwrap();
+    list.freeze_active().unwrap();
+    list.insert(make_range_delete("r1", "m", "z")).unwrap();
+
+    let tombstones = list.all_range_tombstones();
+    assert_eq!(tombstones.len(), 2);
+}
+
+// === scan_all_with_tombstones Tests ===
+
+#[test]
+fn test_scan_all_with_tombstones_includes_delete_entries() {
+    let mut list = new_list();
+    list.insert(make_put("r1", "a", "v1")).unwrap();
+    list.insert(make_delete("r1", "b")).unwrap();
+    list.insert(make_put("r1", "c", "v3")).unwrap();
+
+    let start = CompositeKey::new(b"r1", b"a").unwrap();
+    let end = CompositeKey::new(b"r1", b"d").unwrap();
+    let results = list.scan_all_with_tombstones(&start, &end);
+
+    // Should include all entries including the delete tombstone
+    assert_eq!(results.len(), 3);
+    assert!(results.iter().any(|e| e.entry_type == EntryType::Delete));
+}
+
+#[test]
+fn test_scan_all_with_tombstones_deduplicates_across_memtables() {
+    let mut list = new_list();
+    list.insert(make_put("r1", "k1", "old")).unwrap();
+    list.freeze_active().unwrap();
+    list.insert(make_put("r1", "k1", "new")).unwrap();
+
+    let start = CompositeKey::new(b"r1", b"k1").unwrap();
+    let end = CompositeKey::new(b"r1", b"k2").unwrap();
+    let results = list.scan_all_with_tombstones(&start, &end);
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].value, Bytes::from("new"));
+}
+
+// === Accessor Tests ===
+
+#[test]
+fn test_active_accessor_returns_active_memtable() {
+    let mut list = new_list();
+    list.insert(make_put("r1", "k1", "v1")).unwrap();
+    assert_eq!(list.active().entry_count(), 1);
+}
+
+#[test]
+fn test_frozen_accessor_returns_frozen_slice() {
+    let mut list = new_list();
+    assert!(list.frozen().is_empty());
+
+    list.insert(make_put("r1", "k1", "v1")).unwrap();
+    list.freeze_active().unwrap();
+    assert_eq!(list.frozen().len(), 1);
+
+    list.insert(make_put("r1", "k2", "v2")).unwrap();
+    list.freeze_active().unwrap();
+    assert_eq!(list.frozen().len(), 2);
+}
