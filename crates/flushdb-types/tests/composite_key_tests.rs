@@ -6,9 +6,7 @@ use flushdb_types::{
     CompositeKey, FlushError, MAX_ITEM_KEY_LEN, MAX_RECORD_ID_LEN, RANGE_TOMBSTONE_PREFIX,
 };
 
-// ---------------------------------------------------------------------------
 // Round-trip tests
-// ---------------------------------------------------------------------------
 
 #[test]
 fn test_round_trip_basic() {
@@ -58,9 +56,7 @@ fn test_from_record_only() {
     assert_eq!(key.item_key(), b"");
 }
 
-// ---------------------------------------------------------------------------
 // Sort order tests
-// ---------------------------------------------------------------------------
 
 #[test]
 fn test_sort_different_record_ids() {
@@ -148,9 +144,7 @@ fn test_sort_cross_record_boundary() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Validation tests
-// ---------------------------------------------------------------------------
 
 #[test]
 fn test_rejects_empty_record_id() {
@@ -218,9 +212,7 @@ fn test_accepts_max_size_item_key() {
     assert_eq!(key.item_key().len(), MAX_ITEM_KEY_LEN);
 }
 
-// ---------------------------------------------------------------------------
 // Range tombstone tests
-// ---------------------------------------------------------------------------
 
 #[test]
 fn test_range_tombstone_key_encoding() {
@@ -260,9 +252,7 @@ fn test_range_tombstone_sorts_after_all_data() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Edge-case tests
-// ---------------------------------------------------------------------------
 
 #[test]
 fn test_from_bytes_valid() {

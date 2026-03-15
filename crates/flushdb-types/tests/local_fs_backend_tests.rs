@@ -2,9 +2,7 @@ use bytes::Bytes;
 use flushdb_types::{FlushError, LocalFsBackend, StorageBackend};
 use tempfile::tempdir;
 
-// ---------------------------------------------------------------------------
-// Basic CRUD (9 tests)
-// ---------------------------------------------------------------------------
+// Basic CRUD
 
 #[tokio::test]
 async fn test_put_get_round_trip() {
@@ -103,7 +101,6 @@ async fn test_delete_idempotent() {
     let dir = tempdir().expect("failed to create tempdir");
     let backend = LocalFsBackend::new(dir.path());
 
-    // Deleting a key that never existed should succeed.
     backend
         .delete("nonexistent")
         .await
@@ -124,13 +121,10 @@ async fn test_put_with_slashes() {
     let result = backend.get("a/b/c").await.expect("get failed");
     assert_eq!(result, data);
 
-    // Verify nested directories were created.
     assert!(dir.path().join("a").join("b").is_dir());
 }
 
-// ---------------------------------------------------------------------------
-// Byte-Range Reads (11 tests)
-// ---------------------------------------------------------------------------
+// Byte-range reads
 
 #[tokio::test]
 async fn test_get_range_first_bytes() {
@@ -256,7 +250,6 @@ async fn test_get_range_offset_at_end() {
         .await
         .expect("put failed");
 
-    // offset == file_size with length > 0 should error.
     let err = backend.get_range("file", 4, 1).await.unwrap_err();
     assert!(matches!(err, FlushError::Io(_)));
 }
@@ -271,7 +264,6 @@ async fn test_get_range_offset_beyond_end() {
         .await
         .expect("put failed");
 
-    // offset > file_size with length > 0 should error.
     let err = backend.get_range("file", 100, 5).await.unwrap_err();
     assert!(matches!(err, FlushError::Io(_)));
 }
@@ -330,9 +322,7 @@ async fn test_sequential_ranges() {
     assert_eq!(r.as_ref(), footer);
 }
 
-// ---------------------------------------------------------------------------
-// Conditional Put (6 tests)
-// ---------------------------------------------------------------------------
+// Conditional put
 
 #[tokio::test]
 async fn test_conditional_put_new_key() {
@@ -388,7 +378,6 @@ async fn test_conditional_put_after_delete() {
         .expect("conditional_put failed");
     backend.delete("key").await.expect("delete failed");
 
-    // Should succeed after delete since key no longer exists.
     backend
         .conditional_put("key", Bytes::from("second"))
         .await
@@ -443,9 +432,7 @@ async fn test_concurrent_conditional_put() {
     assert_eq!(failures, 9, "nine writers should fail");
 }
 
-// ---------------------------------------------------------------------------
-// List Prefix (8 tests)
-// ---------------------------------------------------------------------------
+// List prefix
 
 #[tokio::test]
 async fn test_list_prefix_empty() {
@@ -598,9 +585,7 @@ async fn test_list_prefix_after_delete() {
     assert_eq!(keys, vec!["a", "c"]);
 }
 
-// ---------------------------------------------------------------------------
-// S3 Path Convention (4 tests)
-// ---------------------------------------------------------------------------
+// S3 path conventions
 
 #[tokio::test]
 async fn test_s3_manifest_path() {
@@ -664,7 +649,6 @@ async fn test_manifest_discovery_protocol() {
     let dir = tempdir().expect("failed to create tempdir");
     let backend = LocalFsBackend::new(dir.path());
 
-    // Write several manifests.
     for i in 1..=5u32 {
         let key = format!("tenant/manifests/manifest-{:05}", i);
         let body = format!(r#"{{"epoch":{}}}"#, i);
@@ -674,25 +658,21 @@ async fn test_manifest_discovery_protocol() {
             .expect("put failed");
     }
 
-    // List all manifests.
     let manifests = backend
         .list_prefix("tenant/manifests/manifest-")
         .await
         .expect("list_prefix failed");
     assert_eq!(manifests.len(), 5);
 
-    // Find the highest manifest (last in sorted order).
     let highest = manifests.last().expect("no manifests found");
     assert_eq!(highest, "tenant/manifests/manifest-00005");
 
-    // Try to create the next manifest via conditional_put.
     let next_key = "tenant/manifests/manifest-00006";
     backend
         .conditional_put(next_key, Bytes::from(r#"{"epoch":6}"#))
         .await
         .expect("conditional_put should succeed for new manifest");
 
-    // Verify it's now listed.
     let manifests = backend
         .list_prefix("tenant/manifests/manifest-")
         .await
@@ -704,16 +684,13 @@ async fn test_manifest_discovery_protocol() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// Edge Cases (3 tests)
-// ---------------------------------------------------------------------------
+// Edge cases
 
 #[tokio::test]
 async fn test_binary_data_round_trip() {
     let dir = tempdir().expect("failed to create tempdir");
     let backend = LocalFsBackend::new(dir.path());
 
-    // All 256 byte values.
     let data: Vec<u8> = (0..=255).collect();
     let bytes = Bytes::from(data.clone());
 
@@ -740,7 +717,6 @@ async fn test_overwrite_then_range_read() {
         .await
         .expect("put failed");
 
-    // Range read should see the new data.
     let result = backend
         .get_range("file", 0, 3)
         .await
@@ -764,9 +740,7 @@ async fn test_deeply_nested_path() {
     assert_eq!(keys, vec![key]);
 }
 
-// ---------------------------------------------------------------------------
-// Error Handling & Edge Cases (TESTING.md section 7)
-// ---------------------------------------------------------------------------
+// Error handling
 
 #[tokio::test]
 async fn test_special_characters_in_keys() {
@@ -797,7 +771,6 @@ async fn test_concurrent_read_write() {
     let dir = tempdir().expect("failed to create tempdir");
     let backend = std::sync::Arc::new(LocalFsBackend::new(dir.path()));
 
-    // Seed the key with initial data.
     backend
         .put("shared", Bytes::from("initial"))
         .await
@@ -829,7 +802,6 @@ async fn test_concurrent_read_write() {
         h.await.expect("task panicked");
     }
 
-    // After all writes complete, get should return one of the writer values.
     let final_val = backend.get("shared").await.expect("final get failed");
     let final_str = String::from_utf8(final_val.to_vec()).expect("not utf8");
     assert!(
@@ -891,7 +863,6 @@ async fn test_double_delete_then_conditional_put() {
     let dir = tempdir().expect("failed to create tempdir");
     let backend = LocalFsBackend::new(dir.path());
 
-    // Double delete should be fine (idempotent).
     backend
         .conditional_put("key", Bytes::from("first"))
         .await
@@ -902,7 +873,6 @@ async fn test_double_delete_then_conditional_put() {
         .await
         .expect("second delete should be idempotent");
 
-    // conditional_put should succeed after double delete.
     backend
         .conditional_put("key", Bytes::from("second"))
         .await

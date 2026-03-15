@@ -43,7 +43,7 @@ These are non-negotiable. Violating any of these is a blocking error.
 | Input parameters | Prefer `&[u8]` for byte input parameters |
 | Async runtime | All async code uses `tokio` |
 | Async traits | Use `#[async_trait]` when traits need async methods |
-| Comments | Only where logic is non-obvious. No doc comments restating what the signature says. Prefer self-documenting code. |
+| Comments | **Do not overuse comments.** Only where logic is genuinely non-obvious. No doc comments restating what the signature says. No inline comments explaining what the code clearly does. Prefer self-documenting code — good names over explanatory comments. |
 
 ### File Organization
 

@@ -1,9 +1,7 @@
 use bytes::Bytes;
 use flushdb_types::{EntryType, FlushError, Item};
 
-// ────────────────────────────────────────────────────────────────────
 // Item tests
-// ────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_item_new_defaults() {
@@ -109,9 +107,7 @@ fn test_item_inequality() {
     assert_ne!(base, different_chunk);
 }
 
-// ────────────────────────────────────────────────────────────────────
 // EntryType tests
-// ────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_entry_type_put_value() {
@@ -168,7 +164,6 @@ fn test_entry_type_invalid_u8_255() {
 #[test]
 fn test_entry_type_is_copy() {
     let original = EntryType::Put;
-    let copied = original; // Copy
-    // Both are still usable — proves Copy semantics.
+    let copied = original;
     assert_eq!(original, copied);
 }

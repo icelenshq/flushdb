@@ -28,7 +28,6 @@ impl OrderedKey {
         }
     }
 
-    /// Parse an `OrderedKey` from exactly 12 big-endian bytes.
     pub fn from_bytes(bytes: &[u8]) -> FlushResult<Self> {
         if bytes.len() != ORDERED_KEY_SIZE {
             return Err(FlushError::InvalidArgument {
@@ -63,12 +62,9 @@ impl OrderedKey {
         self.sequence
     }
 
-    /// Serialize to a fixed 12-byte big-endian array.
     pub fn to_bytes(&self) -> [u8; ORDERED_KEY_SIZE] {
         let mut buf = [0u8; ORDERED_KEY_SIZE];
         let mut cursor = Cursor::new(&mut buf[..]);
-        // These writes into a 12-byte buffer cannot fail since the buffer is
-        // exactly the right size, so we use expect for the infallible case.
         cursor
             .write_u64::<BigEndian>(self.timestamp_ms)
             .expect("write to 12-byte buffer cannot fail");

@@ -43,7 +43,6 @@ impl StorageBackend for LocalFsBackend {
         let temp_path = parent.join(format!(".tmp.{}", uuid::Uuid::now_v7()));
         tokio::fs::write(&temp_path, &value).await?;
         if let Err(e) = tokio::fs::rename(&temp_path, &path).await {
-            // Best-effort cleanup of the temp file on rename failure.
             let _ = tokio::fs::remove_file(&temp_path).await;
             return Err(e.into());
         }
@@ -99,7 +98,6 @@ impl StorageBackend for LocalFsBackend {
         let mut file = tokio::fs::File::open(&path).await?;
         file.seek(std::io::SeekFrom::Start(offset)).await?;
 
-        // Determine how many bytes we can actually read.
         let available = file_size - offset;
         let to_read = std::cmp::min(length, available) as usize;
 
@@ -174,7 +172,6 @@ impl StorageBackend for LocalFsBackend {
         let mut keys = Vec::new();
         collect_keys_recursive(&self.base_dir, &self.base_dir, &mut keys).await?;
 
-        // Filter by prefix and sort.
         keys.retain(|k| k.starts_with(prefix));
         keys.sort();
 
@@ -202,10 +199,8 @@ async fn collect_keys_recursive(
         if file_type.is_dir() {
             Box::pin(collect_keys_recursive(base_dir, &entry_path, keys)).await?;
         } else if file_type.is_file() {
-            // Strip the base_dir prefix to get the key.
             if let Ok(relative) = entry_path.strip_prefix(base_dir) {
                 let key = relative.to_string_lossy().to_string();
-                // Skip temp files created during atomic writes.
                 let file_name = entry_path
                     .file_name()
                     .map(|n| n.to_string_lossy().to_string())

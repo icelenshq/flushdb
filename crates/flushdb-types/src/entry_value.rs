@@ -33,7 +33,6 @@ impl EntryValue {
         }
     }
 
-    /// Consumes self and returns the inline bytes, or `None` if this is a BlobRef.
     pub fn as_inline(self) -> Option<Bytes> {
         match self {
             EntryValue::Inline(v) => Some(v),
@@ -41,7 +40,6 @@ impl EntryValue {
         }
     }
 
-    /// Returns the byte size of an inline value, or 0 for BlobRef.
     pub fn inline_size(&self) -> usize {
         match self {
             EntryValue::Inline(v) => v.len(),

@@ -5,26 +5,25 @@ use crate::error::FlushResult;
 
 #[async_trait]
 pub trait StorageBackend: Send + Sync {
-    /// Store bytes at key. Overwrite if exists. Creates intermediate path components.
+    /// Overwrites if exists. Creates intermediate path components.
     async fn put(&self, key: &str, value: Bytes) -> FlushResult<()>;
 
-    /// Retrieve bytes by exact key. Returns NotFound if key doesn't exist.
+    /// Returns `NotFound` if key doesn't exist.
     async fn get(&self, key: &str) -> FlushResult<Bytes>;
 
-    /// Byte-range read. Returns NotFound if key doesn't exist.
-    /// Returns empty Bytes if length is 0 (even for existing keys).
+    /// Returns `NotFound` if key doesn't exist, even when length is 0.
     /// If range extends beyond object, returns available bytes (partial content).
     /// If offset is at or beyond file end with length > 0, returns error.
     async fn get_range(&self, key: &str, offset: u64, length: u64) -> FlushResult<Bytes>;
 
-    /// Remove object at key. Idempotent — deleting non-existent key succeeds silently.
+    /// Idempotent — deleting a non-existent key succeeds silently.
     async fn delete(&self, key: &str) -> FlushResult<()>;
 
     /// CAS write — succeeds only if key does NOT exist.
-    /// Returns PreconditionFailed if key already exists.
+    /// Returns `PreconditionFailed` if key already exists.
     async fn conditional_put(&self, key: &str, value: Bytes) -> FlushResult<()>;
 
-    /// List all keys under prefix, lexicographically sorted.
+    /// Returns all keys matching prefix, lexicographically sorted.
     /// Returns empty vec if no keys match.
     async fn list_prefix(&self, prefix: &str) -> FlushResult<Vec<String>>;
 }

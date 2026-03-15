@@ -11,9 +11,6 @@ pub enum EntryType {
 }
 
 impl EntryType {
-    /// Decode a `u8` discriminant into an `EntryType`.
-    ///
-    /// Returns `FlushError::CorruptedData` for unknown discriminants.
     pub fn from_u8(value: u8) -> FlushResult<Self> {
         match value {
             0 => Ok(EntryType::Put),
@@ -25,7 +22,6 @@ impl EntryType {
         }
     }
 
-    /// Encode this `EntryType` as its `u8` discriminant.
     pub fn as_u8(&self) -> u8 {
         *self as u8
     }

@@ -18,7 +18,6 @@ pub const RANGE_TOMBSTONE_PREFIX: u8 = 0xFF;
 pub struct CompositeKey(Bytes);
 
 impl CompositeKey {
-    /// Build a composite key from separate record_id and item_key slices.
     pub fn new(record_id: &[u8], item_key: &[u8]) -> FlushResult<Self> {
         validate_record_id(record_id)?;
         validate_item_key(item_key)?;
@@ -33,7 +32,6 @@ impl CompositeKey {
     /// Creates a range-tombstone key: `[record_id][0x00][0xFF][start_key]`.
     pub fn range_tombstone_key(record_id: &[u8], start_key: &[u8]) -> FlushResult<Self> {
         validate_record_id(record_id)?;
-        // The item portion is [0xFF][start_key], validate combined length.
         let item_len = 1 + start_key.len();
         if item_len > MAX_ITEM_KEY_LEN {
             return Err(FlushError::KeyTooLong {
@@ -78,7 +76,6 @@ impl CompositeKey {
         Ok(Self(bytes))
     }
 
-    /// Returns the record_id portion (everything before the first `0x00`).
     pub fn record_id(&self) -> &[u8] {
         let sep = self
             .0
@@ -88,7 +85,6 @@ impl CompositeKey {
         &self.0[..sep]
     }
 
-    /// Returns the item_key portion (everything after the first `0x00`).
     pub fn item_key(&self) -> &[u8] {
         let sep = self
             .0
@@ -98,29 +94,23 @@ impl CompositeKey {
         &self.0[sep + 1..]
     }
 
-    /// Raw composite key bytes.
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
     }
 
-    /// Consume self and return the inner `Bytes`.
     pub fn into_bytes(self) -> Bytes {
         self.0
     }
 
-    /// True if the item_key starts with `0xFF` (range-tombstone marker).
     pub fn is_range_tombstone(&self) -> bool {
         let ik = self.item_key();
         ik.first() == Some(&RANGE_TOMBSTONE_PREFIX)
     }
 
-    /// True if the item_key portion is empty.
     pub fn is_empty_item_key(&self) -> bool {
         self.item_key().is_empty()
     }
 }
-
-// --- Trait implementations ---
 
 impl std::fmt::Debug for CompositeKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -157,8 +147,6 @@ impl Hash for CompositeKey {
         self.0.hash(state);
     }
 }
-
-// --- Private helpers ---
 
 fn validate_record_id(record_id: &[u8]) -> FlushResult<()> {
     if record_id.is_empty() {

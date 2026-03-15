@@ -1,9 +1,7 @@
 use bytes::Bytes;
 use flushdb_types::{CompositeKey, EntryType, IdempotencyToken, MemtableEntry};
 
-// ────────────────────────────────────────────────────────────────────
 // Helpers
-// ────────────────────────────────────────────────────────────────────
 
 fn make_key(record: &[u8], item: &[u8]) -> CompositeKey {
     CompositeKey::new(record, item).expect("valid composite key")
@@ -39,9 +37,7 @@ fn make_range_delete_entry(record: &[u8], start_key: &[u8], end_key: &[u8]) -> M
     )
 }
 
-// ────────────────────────────────────────────────────────────────────
 // Construction tests
-// ────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_new_defaults_sequence_to_zero() {
@@ -62,9 +58,7 @@ fn test_with_sequence() {
     assert_eq!(entry.sequence_number, 42);
 }
 
-// ────────────────────────────────────────────────────────────────────
 // Delegation tests
-// ────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_record_id_delegation() {
@@ -80,9 +74,7 @@ fn test_item_key_delegation() {
     assert_eq!(entry.item_key(), entry.composite_key.item_key());
 }
 
-// ────────────────────────────────────────────────────────────────────
 // Tombstone / Put predicate tests
-// ────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_is_tombstone_delete() {
@@ -114,9 +106,7 @@ fn test_is_put() {
     assert!(!range_delete.is_put());
 }
 
-// ────────────────────────────────────────────────────────────────────
 // Value semantics tests
-// ────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_put_entry_has_value() {
@@ -137,9 +127,7 @@ fn test_range_delete_entry_value_is_end_key() {
     assert_eq!(entry.value.as_ref(), b"end-key");
 }
 
-// ────────────────────────────────────────────────────────────────────
 // Clone and equality tests
-// ────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_clone_preserves_all_fields() {

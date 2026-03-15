@@ -8,7 +8,6 @@ use bytes::Bytes;
 pub struct Item {
     /// Sort key within the record.
     pub key: Bytes,
-    /// Payload.
     pub value: Bytes,
     /// Optional metadata (content type, schema version, etc.).
     /// Empty `Bytes` means no metadata.
@@ -18,7 +17,6 @@ pub struct Item {
 }
 
 impl Item {
-    /// Create an item with the given key and value, empty metadata, and chunk 0.
     pub fn new(key: Bytes, value: Bytes) -> Self {
         Self {
             key,
@@ -28,7 +26,6 @@ impl Item {
         }
     }
 
-    /// Create an item with key, value, and metadata; chunk defaults to 0.
     pub fn with_metadata(key: Bytes, value: Bytes, metadata: Bytes) -> Self {
         Self {
             key,
@@ -38,7 +35,6 @@ impl Item {
         }
     }
 
-    /// Create an item with all fields specified.
     pub fn with_all(key: Bytes, value: Bytes, metadata: Bytes, chunk: u32) -> Self {
         Self {
             key,

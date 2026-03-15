@@ -20,7 +20,6 @@ pub struct MemtableEntry {
 }
 
 impl MemtableEntry {
-    /// Creates a new entry with `sequence_number` defaulting to 0.
     pub fn new(
         composite_key: CompositeKey,
         value: Bytes,
@@ -38,7 +37,6 @@ impl MemtableEntry {
         }
     }
 
-    /// Creates a new entry with an explicit sequence number.
     pub fn with_sequence(
         composite_key: CompositeKey,
         value: Bytes,
@@ -57,22 +55,18 @@ impl MemtableEntry {
         }
     }
 
-    /// Returns the record_id portion of the composite key.
     pub fn record_id(&self) -> &[u8] {
         self.composite_key.record_id()
     }
 
-    /// Returns the item_key portion of the composite key.
     pub fn item_key(&self) -> &[u8] {
         self.composite_key.item_key()
     }
 
-    /// Returns `true` if this entry represents a deletion (Delete or RangeDelete).
     pub fn is_tombstone(&self) -> bool {
         matches!(self.entry_type, EntryType::Delete | EntryType::RangeDelete)
     }
 
-    /// Returns `true` if this entry represents a Put operation.
     pub fn is_put(&self) -> bool {
         matches!(self.entry_type, EntryType::Put)
     }
