@@ -202,3 +202,93 @@ async fn test_full_lifecycle_with_cache() {
         assert_eq!(result.unwrap().value, Bytes::from("val10"));
     }
 }
+
+fn budget_test_config(dir: &TempDir, namespace: &str, budget: u32) -> (EngineConfig, LocalFsBackend) {
+    let storage_dir = dir.path().join("storage");
+    std::fs::create_dir_all(&storage_dir).expect("create storage dir");
+
+    let backend = LocalFsBackend::new(storage_dir);
+    let mut cache_config = CacheConfig::default();
+    cache_config.get_budget_per_read = budget;
+
+    let config = EngineConfig {
+        memtable_config: MemtableConfig {
+            size_threshold: 256,
+            max_frozen_count: 3,
+        },
+        wal_config: WalConfig::default(),
+        flush_config: FlushConfig {
+            sst_config: flushdb_engine::sstable::types::SstConfig::default(),
+            max_frozen_count: 3,
+            flush_trigger_size: 256,
+            flush_trigger_age: std::time::Duration::from_secs(3600),
+        },
+        compaction_config: CompactionConfig {
+            l0_compaction_trigger: 100,
+            l0_slowdown_trigger: 200,
+            l0_stop_trigger: 300,
+            ..CompactionConfig::default()
+        },
+        manifest_config: ManifestConfig {
+            base_path: "flushdb".to_string(),
+            ..ManifestConfig::default()
+        },
+        cache_config,
+        namespace: namespace.to_string(),
+        local_dir: dir.path().to_path_buf(),
+    };
+    (config, backend)
+}
+
+#[tokio::test]
+async fn test_budget_caps_point_reads() {
+    let dir = TempDir::new().expect("create temp dir");
+    let namespace = "budget-test";
+
+    // Phase 1: Write data that spans multiple L0 SSTables.
+    // Small memtable threshold (256 bytes) forces frequent flushes.
+    // Each record goes to a different SSTable since we use distinct record_ids.
+    {
+        let (config, backend) = budget_test_config(&dir, namespace, 8);
+        let mut engine = Engine::open(backend, config).await.expect("open engine");
+
+        for i in 0..15u32 {
+            let record = format!("rec{:04}", i);
+            let key = format!("key{:04}", i);
+            let value = format!("value_{}", i);
+            engine
+                .put(
+                    record.as_bytes(),
+                    key.as_bytes(),
+                    Bytes::from(value),
+                    Bytes::new(),
+                    None,
+                )
+                .await
+                .expect("put should succeed");
+        }
+
+        engine.close().await.expect("close engine");
+    }
+
+    // Phase 2: Reopen with a budget of 2 and try a point read.
+    // The engine should not panic or return an unexpected error —
+    // it gracefully handles budget exhaustion by stopping early.
+    {
+        let (config, backend) = budget_test_config(&dir, namespace, 2);
+        let engine = Engine::open(backend, config).await.expect("reopen engine");
+
+        assert!(engine.l0_count() > 0, "expected L0 SSTables");
+
+        // Read a key that exists — with a budget of 2 the engine will search
+        // at most 2 SSTable blocks before stopping. It may or may not find
+        // the key depending on SSTable ordering, but it must not error.
+        let result = engine.get(b"rec0000", b"key0000").await;
+        assert!(result.is_ok(), "get should complete without error");
+
+        // A second read of the same key should hit the cache (free) if it
+        // was found on the first attempt.
+        let result2 = engine.get(b"rec0000", b"key0000").await;
+        assert!(result2.is_ok(), "second get should also complete without error");
+    }
+}

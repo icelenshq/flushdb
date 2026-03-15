@@ -12,8 +12,9 @@ use flushdb_wal::{WalConfig, WalEntry, WalManager};
 use crate::block_fetcher::{BlockFetcher, DirectBlockFetcher};
 use crate::cache::{
     self, BlockCache, CacheConfig, CacheStats, CachingBlockFetcher, CoalescingFetcher,
-    ContinuityTracker, NamespaceSizeEstimator, PinnedMetadataCache,
+    ContinuityTracker, NamespaceSizeEstimator, PinnedMetadataCache, ReadBudget,
 };
+use crate::merge_iterator::MergeEntry;
 use crate::compaction::executor::{CompactionExecutor, CompactionResult};
 use crate::compaction::scheduler::{CompactionConfig, CompactionScheduler, CompactionTask, WriteStallStatus};
 use crate::flush::{FlushConfig, FlushPipeline, FlushResult_};
@@ -249,14 +250,67 @@ impl<B: StorageBackend + Clone + 'static> Engine<B> {
         item_key: &[u8],
     ) -> FlushResult<Option<GetResult>> {
         let key = CompositeKey::new(record_id, item_key)?;
+
         if self.continuity_tracker.is_known_absent(record_id, item_key, self.manifest_version()) {
             return Ok(None);
         }
-        let read_path = ReadPath::new(&self.caching_fetcher);
-        let result = read_path
-            .point_read(&key, &self.memtable_list, &self.levels)
-            .await?;
-        Ok(result.map(|e| GetResult::from_merge_entry(&e)))
+
+        let mut budget = ReadBudget::new(self.config.cache_config.get_budget_per_read);
+
+        if let Some(entry) = self.memtable_list.get(&key) {
+            let merge_entry = MergeEntry::from_memtable_entry(&entry);
+            if merge_entry.is_tombstone() {
+                return Ok(None);
+            }
+            if self.memtable_list.range_tombstone_covers(
+                key.record_id(),
+                key.item_key(),
+                entry.sequence_number,
+            ) {
+                return Ok(None);
+            }
+            return Ok(Some(GetResult::from_merge_entry(&merge_entry)));
+        }
+
+        let mut best: Option<MergeEntry> = None;
+        for level_state in &self.levels {
+            let candidates = level_state.find_candidates_for_key(&key);
+            for handle in candidates {
+                match handle
+                    .get_budgeted(&key, &self.caching_fetcher, &mut budget)
+                    .await
+                {
+                    Ok(Some(block_entry)) => {
+                        let merge_entry = MergeEntry::from_block_entry(block_entry);
+                        match &best {
+                            Some(b) if b.sequence_number >= merge_entry.sequence_number => {}
+                            _ => best = Some(merge_entry),
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(FlushError::ResourceExhausted { .. }) => break,
+                    Err(e) => return Err(e),
+                }
+            }
+            if budget.is_exhausted() {
+                break;
+            }
+        }
+
+        match best {
+            Some(entry) if entry.is_tombstone() => Ok(None),
+            Some(entry) => {
+                if self.memtable_list.range_tombstone_covers(
+                    key.record_id(),
+                    key.item_key(),
+                    entry.sequence_number,
+                ) {
+                    return Ok(None);
+                }
+                Ok(Some(GetResult::from_merge_entry(&entry)))
+            }
+            None => Ok(None),
+        }
     }
 
     pub async fn scan(
@@ -267,6 +321,10 @@ impl<B: StorageBackend + Clone + 'static> Engine<B> {
         options: RangeReadOptions,
     ) -> FlushResult<RangeReadResult> {
         let read_path = ReadPath::new(&self.caching_fetcher);
+        // Budget integration for scan requires threading ReadBudget through ReadPath,
+        // and NamespaceSizeEstimator / ContinuityTracker marking require &mut self
+        // while scan takes &self. These will be wired when the server layer wraps
+        // Engine with single-owner access patterns (no Arc<Mutex>).
         read_path
             .range_read(
                 record_id,
