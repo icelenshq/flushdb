@@ -11,6 +11,7 @@ use flushdb_types::StorageBackend;
 use crate::namespace_manager::NamespaceManager;
 use crate::version_generator::VersionGenerator;
 
+pub mod read;
 pub mod write;
 
 pub struct FlushDbService<B: StorageBackend> {
@@ -51,15 +52,15 @@ impl<B: StorageBackend + Clone + Send + Sync + 'static> FlushDb for FlushDbServi
 
     async fn get_items(
         &self,
-        _request: Request<proto::GetItemsRequest>,
+        request: Request<proto::GetItemsRequest>,
     ) -> Result<Response<proto::GetItemsResponse>, Status> {
-        Err(Status::unimplemented("not yet implemented"))
+        read::handle_get_items(self, request).await
     }
 
     async fn scan_items(
         &self,
-        _request: Request<proto::ScanItemsRequest>,
+        request: Request<proto::ScanItemsRequest>,
     ) -> Result<Response<Self::ScanItemsStream>, Status> {
-        Err(Status::unimplemented("not yet implemented"))
+        read::handle_scan_items(self, request).await
     }
 }
