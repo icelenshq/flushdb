@@ -1,5 +1,6 @@
 pub mod conversions;
 pub mod namespace_config;
+pub mod observability;
 pub mod version_generator;
 
 pub use conversions::{
@@ -11,5 +12,12 @@ pub use conversions::{
 pub use namespace_config::{
     ConsistencyScope, ConsistencyTarget, NamespaceConfig, PartitionKeyStrategy, StorageLayer,
     StorageLayerConfig, StorageLayerType, WriteConsistency,
+};
+pub use observability::{
+    MetricsHandle, init_metrics, init_tracing, record_compaction, record_flush,
+    record_idempotent_dedup, record_page_token_resume, record_read_bytes, record_read_items,
+    record_read_latency, record_slo_early_return, record_write_bytes, record_write_items,
+    record_write_latency, set_active_connections, set_namespace_count, set_partition_count,
+    update_cache_stats, update_level_stats,
 };
 pub use version_generator::VersionGenerator;
