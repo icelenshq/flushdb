@@ -35,7 +35,10 @@ pub use cache::{CacheConfig, CacheStats, ReadBudget};
 pub use read_path::{GetResult, PageToken, RangeReadOptions, RangeReadResult, ReadPath};
 pub use recovery::{RecoveryConfig, RecoveryResult, recover};
 pub use skiplist::{SkipListIntoIterator, SkipListIterator, SkipNode};
+pub use sstable::SstConfig;
 pub use sstable_handle::{LevelState, SSTableHandle};
+
+pub use flushdb_wal::WalConfig;
 
 #[cfg(test)]
 mod send_assertions {

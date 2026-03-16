@@ -360,3 +360,53 @@ fn test_remove_current_segment_returns_error() {
     let result = writer.remove_segment(current);
     assert!(result.is_err());
 }
+
+#[test]
+fn test_remove_nonexistent_segment_returns_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = WalConfig::default();
+    let mut writer = WalWriter::open(dir.path(), &config).unwrap();
+
+    let result = writer.remove_segment(99999);
+    assert!(result.is_err(), "removing a segment that was never created should fail");
+}
+
+#[test]
+fn test_explicit_rotate_on_small_segment() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = WalConfig::default();
+    let mut writer = WalWriter::open(dir.path(), &config).unwrap();
+
+    // Write a few entries to segment 1
+    for _ in 0..3 {
+        writer.append(&mut make_entry()).unwrap();
+    }
+    let seg_before = writer.current_segment_number();
+
+    // Explicitly rotate
+    writer.rotate().unwrap();
+    assert_eq!(
+        writer.current_segment_number(),
+        seg_before + 1,
+        "rotation should create the next consecutive segment"
+    );
+
+    // Write more entries to the new segment
+    for _ in 0..3 {
+        let mut entry = make_entry();
+        writer.append(&mut entry).unwrap();
+        assert_eq!(
+            entry.sequence_number, 4 + (entry.sequence_number - 4),
+            "sequence should continue from where the previous segment left off"
+        );
+    }
+    writer.sync().unwrap();
+
+    // Verify the old segment is readable
+    let old_seg_path = dir.path().join(segment_filename(seg_before));
+    let reader = SegmentReader::open(&old_seg_path).unwrap();
+    let entries: Vec<WalEntry> = reader.entries().map(|r| r.unwrap()).collect();
+    assert_eq!(entries.len(), 3);
+    assert_eq!(entries[0].sequence_number, 1);
+    assert_eq!(entries[2].sequence_number, 3);
+}

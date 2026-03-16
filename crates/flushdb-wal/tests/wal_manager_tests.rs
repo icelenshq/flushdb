@@ -41,21 +41,39 @@ async fn test_open_creates_wal_directory() {
 }
 
 #[tokio::test]
-async fn test_open_on_existing_wal() {
+async fn test_open_on_existing_wal_recovers_sequence() {
     let dir = tempfile::tempdir().unwrap();
     let config = WalConfig::default();
 
-    // First open and write
+    // First open and write 5 entries
     {
         let mut manager = WalManager::open(dir.path(), config.clone()).unwrap();
-        let notif = manager.append(make_entry(), 1).unwrap();
+        for _ in 0..5 {
+            let notif = manager.append(make_entry(), 1).unwrap();
+            notif.await.unwrap().unwrap();
+        }
+        manager.shutdown().await.unwrap();
+    }
+
+    // Second open: write one more and verify sequence continues
+    {
+        let mut manager = WalManager::open(dir.path(), config).unwrap();
+        let notif = manager.append(make_entry(), 2).unwrap();
         notif.await.unwrap().unwrap();
         manager.shutdown().await.unwrap();
     }
 
-    // Second open should resume
-    let manager = WalManager::open(dir.path(), config).unwrap();
-    manager.shutdown().await.unwrap();
+    // Recover and verify all 6 entries with correct sequence ordering
+    let entries = WalManager::recover(dir.path()).unwrap();
+    assert_eq!(entries.len(), 6);
+    for window in entries.windows(2) {
+        assert!(
+            window[1].sequence_number > window[0].sequence_number,
+            "sequence not monotonic after reopen: {} vs {}",
+            window[0].sequence_number,
+            window[1].sequence_number
+        );
+    }
 }
 
 #[tokio::test]
@@ -81,18 +99,6 @@ async fn test_shutdown_flushes_pending_writes() {
 }
 
 // === Write Path Tests ===
-
-#[tokio::test]
-async fn test_append_returns_notification() {
-    let dir = tempfile::tempdir().unwrap();
-    let config = WalConfig::default();
-    let mut manager = WalManager::open(dir.path(), config).unwrap();
-
-    let notif = manager.append(make_entry(), 1).unwrap();
-    let result = notif.await.unwrap();
-    assert!(result.is_ok());
-    manager.shutdown().await.unwrap();
-}
 
 #[tokio::test]
 async fn test_append_notification_fires() {
@@ -494,6 +500,51 @@ async fn test_flush_triggers_oldest_pinned_generation() {
     let triggers = manager.flush_triggers().unwrap();
     assert_eq!(triggers.oldest_pinned_generation, None);
 
+    manager.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_flush_triggers_size_pressure() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = WalConfig {
+        max_total_wal_bytes: 256,
+        ..WalConfig::default()
+    };
+    let mut manager = WalManager::open(dir.path(), config).unwrap();
+
+    for _ in 0..50 {
+        let notif = manager.append(make_large_entry(), 1).unwrap();
+        notif.await.unwrap().unwrap();
+    }
+
+    let triggers = manager.flush_triggers().unwrap();
+    assert!(
+        triggers.size_pressure,
+        "size_pressure should be true when WAL exceeds max_total_wal_bytes"
+    );
+    manager.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_flush_triggers_age_triggered_segments() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = WalConfig {
+        segment_max_age: std::time::Duration::from_millis(50),
+        ..WalConfig::default()
+    };
+    let mut manager = WalManager::open(dir.path(), config).unwrap();
+
+    let notif = manager.append(make_entry(), 1).unwrap();
+    notif.await.unwrap().unwrap();
+
+    // Wait for the segment to age past the threshold
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+    let triggers = manager.flush_triggers().unwrap();
+    assert!(
+        !triggers.age_triggered_segments.is_empty(),
+        "age_triggered_segments should be non-empty after segment ages past max_age"
+    );
     manager.shutdown().await.unwrap();
 }
 

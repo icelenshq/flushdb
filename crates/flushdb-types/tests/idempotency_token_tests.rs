@@ -186,3 +186,24 @@ fn test_as_bytes_none_is_all_zeros() {
     let none = IdempotencyToken::none();
     assert!(none.as_bytes().iter().all(|&b| b == 0));
 }
+
+#[test]
+fn test_from_bytes_all_zeros_is_none() {
+    let token = IdempotencyToken::from_bytes(&[0u8; 24]).unwrap();
+    assert!(token.is_none());
+}
+
+#[test]
+fn test_is_within_drift_extreme_values_no_panic() {
+    let token = IdempotencyToken::from_parts(u64::MAX, [0u8; 16]);
+    // now_ms = 0, max_drift = 0: diff = u64::MAX, should be outside drift
+    assert!(!token.is_within_drift(0, 0));
+    // now_ms = 0, max_drift = u64::MAX: diff = u64::MAX, should be within drift
+    assert!(token.is_within_drift(0, u64::MAX));
+
+    let token2 = IdempotencyToken::from_parts(0, [1u8; 16]);
+    // now_ms = u64::MAX, max_drift = 0: diff = u64::MAX, should be outside drift
+    assert!(!token2.is_within_drift(u64::MAX, 0));
+    // now_ms = u64::MAX, max_drift = u64::MAX: should be within drift
+    assert!(token2.is_within_drift(u64::MAX, u64::MAX));
+}

@@ -28,3 +28,15 @@ async-trait = "0.1"
 tempfile = "3"
 byteorder = "1"
 moka = { version = "0.12", features = ["sync"] }
+aws-sdk-s3 = "1"
+aws-config = "1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+metrics = "0.24"
+metrics-exporter-prometheus = "0.16"
+parking_lot = "0.12"
+dashmap = "6"
+testcontainers = "0.23"
+testcontainers-modules = { version = "0.11", features = ["minio"] }
+fnv = "1"
+futures = "0.3"
+tokio-stream = "0.1"
