@@ -198,6 +198,37 @@ fn test_needs_size_flush() {
 // === Edge Cases ===
 
 #[test]
+fn test_generations_for_segment_returns_sorted_ids() {
+    let mut tracker = DirtySegmentTracker::new();
+    tracker.record_write(1, 300, 1);
+    tracker.record_write(1, 100, 2);
+    tracker.record_write(1, 200, 3);
+
+    let gens = tracker.generations_for_segment(1);
+    assert_eq!(gens, vec![100, 200, 300]);
+}
+
+#[test]
+fn test_generations_for_segment_empty() {
+    let tracker = DirtySegmentTracker::new();
+    assert!(tracker.generations_for_segment(999).is_empty());
+}
+
+#[test]
+fn test_deletable_segments_empty_after_remove() {
+    let mut tracker = DirtySegmentTracker::new();
+    tracker.record_write(1, 100, 5);
+    tracker.mark_generation_flushed(100);
+    assert_eq!(tracker.deletable_segments(), vec![1]);
+
+    tracker.remove_segment(1);
+    assert!(
+        tracker.deletable_segments().is_empty(),
+        "removed segment should not appear in deletable list"
+    );
+}
+
+#[test]
 fn test_remove_segment_cleans_all_tracking() {
     let mut tracker = DirtySegmentTracker::new();
     tracker.record_write(1, 100, 5);

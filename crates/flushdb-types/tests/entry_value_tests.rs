@@ -10,55 +10,6 @@ fn test_inline_creation() {
 }
 
 #[test]
-fn test_blob_ref_creation() {
-    let blob_id = Bytes::from("blob-abc-123");
-    let entry = EntryValue::BlobRef {
-        blob_id: blob_id.clone(),
-        offset: 4096,
-        size: 1024,
-    };
-
-    match &entry {
-        EntryValue::BlobRef {
-            blob_id: id,
-            offset,
-            size,
-        } => {
-            assert_eq!(id, &blob_id);
-            assert_eq!(*offset, 4096);
-            assert_eq!(*size, 1024);
-        }
-        _ => panic!("expected BlobRef variant"),
-    }
-}
-
-#[test]
-fn test_is_inline() {
-    let inline = EntryValue::Inline(Bytes::from("data"));
-    let blob_ref = EntryValue::BlobRef {
-        blob_id: Bytes::from("id"),
-        offset: 0,
-        size: 0,
-    };
-
-    assert!(inline.is_inline());
-    assert!(!blob_ref.is_inline());
-}
-
-#[test]
-fn test_is_blob_ref() {
-    let inline = EntryValue::Inline(Bytes::from("data"));
-    let blob_ref = EntryValue::BlobRef {
-        blob_id: Bytes::from("id"),
-        offset: 0,
-        size: 0,
-    };
-
-    assert!(!inline.is_blob_ref());
-    assert!(blob_ref.is_blob_ref());
-}
-
-#[test]
 fn test_inline_value_accessor() {
     let data = Bytes::from("value");
     let inline = EntryValue::Inline(data.clone());

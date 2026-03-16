@@ -393,6 +393,48 @@ async fn test_delete_nonexistent_namespace() {
     assert_eq!(err.code(), tonic::Code::NotFound);
 }
 
+#[tokio::test]
+async fn test_delete_items_empty_namespace_rejected() {
+    let (service, _dir) = setup_service().await;
+
+    let delete_req = proto::DeleteItemsRequest {
+        namespace: "".to_string(),
+        id: "record-1".to_string(),
+        predicate: Some(proto::Predicate {
+            predicate: Some(proto::predicate::Predicate::MatchAll(true)),
+        }),
+        idempotency_token: None,
+    };
+
+    let err = service
+        .delete_items(Request::new(delete_req))
+        .await
+        .expect_err("empty namespace should fail");
+
+    assert_eq!(err.code(), tonic::Code::InvalidArgument);
+}
+
+#[tokio::test]
+async fn test_delete_items_empty_record_id_rejected() {
+    let (service, _dir) = setup_service().await;
+
+    let delete_req = proto::DeleteItemsRequest {
+        namespace: "test-ns".to_string(),
+        id: "".to_string(),
+        predicate: Some(proto::Predicate {
+            predicate: Some(proto::predicate::Predicate::MatchAll(true)),
+        }),
+        idempotency_token: None,
+    };
+
+    let err = service
+        .delete_items(Request::new(delete_req))
+        .await
+        .expect_err("empty record_id should fail");
+
+    assert_eq!(err.code(), tonic::Code::InvalidArgument);
+}
+
 // ─── Idempotency Tests ───
 
 #[tokio::test]

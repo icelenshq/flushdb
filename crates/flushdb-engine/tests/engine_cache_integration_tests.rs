@@ -286,9 +286,38 @@ async fn test_budget_caps_point_reads() {
         let result = engine.get(b"rec0000", b"key0000").await;
         assert!(result.is_ok(), "get should complete without error");
 
+        let found_first_time = result.unwrap();
+
         // A second read of the same key should hit the cache (free) if it
         // was found on the first attempt.
         let result2 = engine.get(b"rec0000", b"key0000").await;
         assert!(result2.is_ok(), "second get should also complete without error");
+        let found_second_time = result2.unwrap();
+
+        // If the key was found on the first attempt, the value must be correct
+        // and the second attempt must also find it (via cache).
+        if let Some(ref entry) = found_first_time {
+            assert_eq!(
+                entry.value,
+                Bytes::from("value_0"),
+                "found key should have correct value"
+            );
+            assert!(
+                found_second_time.is_some(),
+                "cached key should be found on second read"
+            );
+            assert_eq!(
+                found_second_time.unwrap().value,
+                Bytes::from("value_0"),
+                "cached value should match original"
+            );
+        } else {
+            // Budget was exhausted before finding the key — both reads should
+            // consistently return None (budget-limited miss).
+            assert!(
+                found_second_time.is_none(),
+                "if first read missed due to budget, second should also miss"
+            );
+        }
     }
 }

@@ -286,8 +286,8 @@ async fn test_sstable_large_entry_count() {
     while let Some(entry) = iter.next().await.unwrap() {
         if let Some(ref pk) = prev_key {
             assert!(
-                entry.composite_key.as_bytes() >= pk.as_ref(),
-                "iterator entries should be in sorted order at index {iter_count}"
+                entry.composite_key.as_bytes() > pk.as_ref(),
+                "iterator entries should be in strictly sorted order at index {iter_count}"
             );
         }
         prev_key = Some(Bytes::copy_from_slice(entry.composite_key.as_bytes()));

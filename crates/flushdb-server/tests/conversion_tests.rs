@@ -200,6 +200,21 @@ fn test_parse_no_predicate() {
 }
 
 #[test]
+fn test_parse_predicate_inner_none() {
+    let result = parse_predicate(Some(proto::Predicate { predicate: None }));
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        FlushError::InvalidArgument { message } => {
+            assert!(
+                message.contains("must specify a predicate"),
+                "unexpected message: {message}"
+            );
+        }
+        other => panic!("expected InvalidArgument, got: {other:?}"),
+    }
+}
+
+#[test]
 fn test_parse_match_keys_empty() {
     let pred = proto::Predicate {
         predicate: Some(proto::predicate::Predicate::MatchKeys(proto::MatchKeys {

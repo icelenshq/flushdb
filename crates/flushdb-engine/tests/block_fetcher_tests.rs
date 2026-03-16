@@ -5,6 +5,7 @@ use flushdb_engine::{
 };
 use flushdb_types::{
     CompositeKey, EntryType, EntryValue, IdempotencyToken, LocalFsBackend, MemtableEntry,
+    StorageBackend,
 };
 use tempfile::TempDir;
 
@@ -763,8 +764,12 @@ async fn test_handle_multiple_blocks_scan() {
 }
 
 #[tokio::test]
-async fn test_fetcher_backend_accessor() {
+async fn test_fetcher_backend_accessor_round_trip() {
     let tmp = TempDir::new().unwrap();
     let fetcher = DirectBlockFetcher::new(LocalFsBackend::new(tmp.path()));
-    let _backend = fetcher.backend();
+    let backend = fetcher.backend();
+
+    backend.put("test-key", Bytes::from("test-value")).await.unwrap();
+    let result = backend.get("test-key").await.unwrap();
+    assert_eq!(result, Bytes::from("test-value"));
 }

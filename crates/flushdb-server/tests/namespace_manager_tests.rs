@@ -383,6 +383,190 @@ async fn test_namespace_isolation_deletes() {
     assert_eq!(result_b.value, Bytes::from_static(b"value-b"));
 }
 
+// ─── Delete Range Tests ───
+
+#[tokio::test]
+async fn test_delete_range() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let mgr = test_manager(tmp.path()).await;
+
+    mgr.create_namespace(test_config("ns-1"))
+        .await
+        .expect("create");
+
+    for key in [b"key-a", b"key-b", b"key-c", b"key-d"] {
+        mgr.put(
+            "ns-1",
+            "record-1",
+            key.as_slice(),
+            Bytes::from_static(b"val"),
+            Bytes::new(),
+            IdempotencyToken::none(),
+        )
+        .await
+        .expect("put");
+    }
+
+    // delete_range uses [start, end) semantics (inclusive start, exclusive end)
+    mgr.delete_range("ns-1", "record-1", b"key-b", b"key-d")
+        .await
+        .expect("delete_range should succeed");
+
+    let result_a = mgr
+        .get("ns-1", "record-1", b"key-a")
+        .await
+        .expect("get a");
+    assert!(result_a.is_some(), "key-a should still exist (before range)");
+
+    let result_b = mgr
+        .get("ns-1", "record-1", b"key-b")
+        .await
+        .expect("get b");
+    assert!(result_b.is_none(), "key-b should be deleted (in range)");
+
+    let result_c = mgr
+        .get("ns-1", "record-1", b"key-c")
+        .await
+        .expect("get c");
+    assert!(result_c.is_none(), "key-c should be deleted (in range)");
+
+    let result_d = mgr
+        .get("ns-1", "record-1", b"key-d")
+        .await
+        .expect("get d");
+    assert!(result_d.is_some(), "key-d should still exist (at exclusive end)");
+}
+
+// ─── Multi Get Tests ───
+
+#[tokio::test]
+async fn test_multi_get() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let mgr = test_manager(tmp.path()).await;
+
+    mgr.create_namespace(test_config("ns-1"))
+        .await
+        .expect("create");
+
+    mgr.put(
+        "ns-1",
+        "record-1",
+        b"key-a",
+        Bytes::from_static(b"val-a"),
+        Bytes::new(),
+        IdempotencyToken::none(),
+    )
+    .await
+    .expect("put a");
+
+    mgr.put(
+        "ns-1",
+        "record-1",
+        b"key-c",
+        Bytes::from_static(b"val-c"),
+        Bytes::new(),
+        IdempotencyToken::none(),
+    )
+    .await
+    .expect("put c");
+
+    let results = mgr
+        .multi_get(
+            "ns-1",
+            "record-1",
+            &[b"key-a".as_slice(), b"key-b".as_slice(), b"key-c".as_slice()],
+        )
+        .await
+        .expect("multi_get should succeed");
+
+    assert_eq!(results.len(), 3);
+    assert!(results[0].is_some(), "key-a should be found");
+    assert_eq!(results[0].as_ref().unwrap().value, Bytes::from_static(b"val-a"));
+    assert!(results[1].is_none(), "key-b should not be found");
+    assert!(results[2].is_some(), "key-c should be found");
+    assert_eq!(results[2].as_ref().unwrap().value, Bytes::from_static(b"val-c"));
+}
+
+// ─── Flush All Tests ───
+
+#[tokio::test]
+async fn test_flush_all() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let mgr = test_manager(tmp.path()).await;
+
+    mgr.create_namespace(test_config("ns-1"))
+        .await
+        .expect("create");
+
+    mgr.put(
+        "ns-1",
+        "record-1",
+        b"key-1",
+        Bytes::from_static(b"value"),
+        Bytes::new(),
+        IdempotencyToken::none(),
+    )
+    .await
+    .expect("put");
+
+    mgr.flush_all().await.expect("flush_all should succeed");
+}
+
+// ─── Version Generation Tests ───
+
+#[tokio::test]
+async fn test_next_version() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let mgr = test_manager(tmp.path()).await;
+
+    let version = mgr.next_version();
+    assert_eq!(version.node_id(), 0, "node_id should match the one passed to VersionGenerator");
+    assert!(version.timestamp_ms() > 0, "timestamp should be a positive value");
+}
+
+// ─── Config Error Tests ───
+
+#[tokio::test]
+async fn test_get_namespace_config_not_found() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let mgr = test_manager(tmp.path()).await;
+
+    let err = mgr
+        .get_namespace_config("nonexistent")
+        .expect_err("should fail for nonexistent namespace");
+
+    match &err {
+        FlushError::NotFound { key } => {
+            assert!(
+                key.contains("namespace: nonexistent"),
+                "unexpected key: {key}"
+            );
+        }
+        other => panic!("expected NotFound, got: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn test_update_namespace_config_not_found() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let mgr = test_manager(tmp.path()).await;
+
+    let config = test_config("nonexistent");
+    let err = mgr
+        .update_namespace_config(config)
+        .expect_err("should fail for nonexistent namespace");
+
+    match &err {
+        FlushError::NotFound { key } => {
+            assert!(
+                key.contains("namespace: nonexistent"),
+                "unexpected key: {key}"
+            );
+        }
+        other => panic!("expected NotFound, got: {other:?}"),
+    }
+}
+
 // ─── Multi-Partition Tests ───
 
 #[tokio::test]

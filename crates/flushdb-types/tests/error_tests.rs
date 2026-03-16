@@ -134,3 +134,9 @@ fn test_invalid_argument_display() {
         "should contain message"
     );
 }
+
+#[test]
+fn test_flush_error_is_send_sync() {
+    fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<FlushError>();
+}

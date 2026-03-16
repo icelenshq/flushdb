@@ -25,7 +25,7 @@ fn test_shard_key_distribution() {
     let backend = S3StorageBackend::new(dummy_client(), "test-bucket".to_string());
     let mut seen_shards: HashSet<u32> = HashSet::new();
 
-    for i in 0..1000 {
+    for i in 0..5000 {
         let key = format!("key-{}", i);
         let sharded = backend.shard_key(&key);
         let prefix_str = sharded.split('/').next().expect("should have prefix");

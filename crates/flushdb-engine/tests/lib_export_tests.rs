@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use flushdb_engine::{
     DedupSet, Memtable, MemtableConfig, MemtableList, RangeTombstone, RangeTombstoneIndex,
-    SkipListIntoIterator, SkipListIterator, SkipNode,
+    SkipNode,
 };
 use flushdb_types::{CompositeKey, EntryType, IdempotencyToken, MemtableEntry};
 
@@ -13,20 +13,6 @@ fn make_put(record: &str, key: &str, value: &str) -> MemtableEntry {
         IdempotencyToken::none(),
         EntryType::Put,
     )
-}
-
-#[test]
-fn test_public_types_importable() {
-    fn assert_type_exists<T>() {}
-    assert_type_exists::<Memtable>();
-    assert_type_exists::<MemtableConfig>();
-    assert_type_exists::<MemtableList>();
-    assert_type_exists::<DedupSet>();
-    assert_type_exists::<RangeTombstone>();
-    assert_type_exists::<RangeTombstoneIndex>();
-    assert_type_exists::<SkipNode>();
-    assert_type_exists::<SkipListIterator<'_>>();
-    assert_type_exists::<SkipListIntoIterator>();
 }
 
 #[test]

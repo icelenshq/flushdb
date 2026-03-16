@@ -117,3 +117,22 @@ fn test_entry_type_invalid_u8_255() {
     }
 }
 
+#[test]
+fn test_entry_type_discriminant_values_are_wire_stable() {
+    assert_eq!(EntryType::Put.as_u8(), 0);
+    assert_eq!(EntryType::Delete.as_u8(), 1);
+    assert_eq!(EntryType::RangeDelete.as_u8(), 2);
+}
+
+#[test]
+fn test_item_clone() {
+    let item = Item::with_all(
+        Bytes::from("key"),
+        Bytes::from("value"),
+        Bytes::from("meta"),
+        42,
+    );
+    let cloned = item.clone();
+    assert_eq!(item, cloned);
+}
+

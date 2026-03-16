@@ -113,8 +113,7 @@ async fn test_stop_from_draining() {
 async fn test_put_active_succeeds() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let mut p = open_test_partition(tmp.path()).await;
-    let seq = p
-        .put(
+    p.put(
             b"record-1",
             b"key-1",
             Bytes::from_static(b"value-1"),
@@ -123,7 +122,13 @@ async fn test_put_active_succeeds() {
         )
         .await
         .expect("put should succeed in Active");
-    assert!(seq > 0 || seq == 0); // sequence is valid
+
+    let result = p
+        .get(b"record-1", b"key-1")
+        .await
+        .expect("get should succeed")
+        .expect("should find written entry");
+    assert_eq!(result.value, Bytes::from_static(b"value-1"));
 }
 
 #[tokio::test]
