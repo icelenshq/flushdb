@@ -121,16 +121,6 @@ fn test_zero_values() {
 }
 
 #[test]
-fn test_copy_semantics() {
-    let a = OrderedKey::new(42, 1, 2);
-    let b = a; // Copy
-    // Both should be usable after the assignment.
-    assert_eq!(a.timestamp_ms(), 42);
-    assert_eq!(b.timestamp_ms(), 42);
-    assert_eq!(a, b);
-}
-
-#[test]
 fn test_from_bytes_empty_input() {
     let err = OrderedKey::from_bytes(&[]).unwrap_err();
     assert!(

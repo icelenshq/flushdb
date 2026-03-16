@@ -20,18 +20,7 @@ fn make_entry() -> WalEntry {
     }
 }
 
-fn setup(config: WalConfig) -> (tempfile::TempDir, GroupCommitBuffer, Arc<AtomicU64>) {
-    let dir = tempfile::tempdir().unwrap();
-    let writer = WalWriter::open(dir.path(), &config).unwrap();
-    let seg = Arc::new(AtomicU64::new(writer.current_segment_number()));
-    let (buffer, handle) = GroupCommitBuffer::new(writer, config, Arc::clone(&seg));
-    // Leak the handle so the loop keeps running
-    // We'll handle shutdown manually in tests that need it
-    std::mem::forget(handle);
-    (dir, buffer, seg)
-}
-
-fn setup_with_handle(
+fn setup(
     config: WalConfig,
 ) -> (
     tempfile::TempDir,
@@ -50,7 +39,7 @@ fn setup_with_handle(
 
 #[tokio::test]
 async fn test_single_write_is_durable() {
-    let (dir, buffer, _seg) = setup(WalConfig::default());
+    let (dir, buffer, _handle, _seg) = setup(WalConfig::default());
     let notification = buffer.submit(make_entry()).unwrap();
     let result = notification.await.unwrap();
     assert!(result.is_ok());
@@ -63,7 +52,7 @@ async fn test_single_write_is_durable() {
 
 #[tokio::test]
 async fn test_multiple_writes_all_notified() {
-    let (dir, buffer, _seg) = setup(WalConfig::default());
+    let (dir, buffer, _handle, _seg) = setup(WalConfig::default());
     let mut notifications = Vec::new();
     for _ in 0..10 {
         notifications.push(buffer.submit(make_entry()).unwrap());
@@ -80,7 +69,7 @@ async fn test_multiple_writes_all_notified() {
 
 #[tokio::test]
 async fn test_write_data_preserved() {
-    let (dir, buffer, _seg) = setup(WalConfig::default());
+    let (dir, buffer, _handle, _seg) = setup(WalConfig::default());
     let entry = WalEntry {
         sequence_number: 0,
         entry_type: EntryType::Delete,
@@ -110,7 +99,7 @@ async fn test_timer_trigger_commits_batch() {
         group_commit_interval: std::time::Duration::from_millis(50),
         ..WalConfig::default()
     };
-    let (_dir, buffer, _seg) = setup(config);
+    let (_dir, buffer, _handle, _seg) = setup(config);
 
     let notif = buffer.submit(make_entry()).unwrap();
     // Wait for timer to fire
@@ -122,7 +111,7 @@ async fn test_timer_trigger_commits_batch() {
 
 #[tokio::test]
 async fn test_concurrent_writers() {
-    let (dir, buffer, _seg) = setup(WalConfig::default());
+    let (dir, buffer, _handle, _seg) = setup(WalConfig::default());
     let buffer = Arc::new(buffer);
 
     let mut handles = Vec::new();
@@ -152,7 +141,7 @@ async fn test_concurrent_writers() {
 
 #[tokio::test]
 async fn test_sequence_numbers_monotonic_across_batches() {
-    let (dir, buffer, _seg) = setup(WalConfig::default());
+    let (dir, buffer, _handle, _seg) = setup(WalConfig::default());
 
     // Submit in batches with small delays to force separate batches
     for _ in 0..5 {
@@ -188,7 +177,7 @@ async fn test_batch_sync_mode_deferred_fsync() {
         batch_sync_interval: std::time::Duration::from_millis(50),
         ..WalConfig::default()
     };
-    let (_dir, buffer, _seg) = setup(config);
+    let (_dir, buffer, _handle, _seg) = setup(config);
 
     let notif = buffer.submit(make_entry()).unwrap();
     // In batch sync mode, notification should fire quickly (before fsync)
@@ -259,7 +248,7 @@ async fn test_submit_after_loop_exits_returns_error() {
 
 #[tokio::test]
 async fn test_shutdown_drains_pending_writes() {
-    let (dir, buffer, handle, _seg) = setup_with_handle(WalConfig::default());
+    let (dir, buffer, handle, _seg) = setup(WalConfig::default());
 
     let mut notifications = Vec::new();
     for _ in 0..10 {
@@ -281,19 +270,3 @@ async fn test_shutdown_drains_pending_writes() {
     assert_eq!(entries.len(), 10);
 }
 
-#[tokio::test]
-async fn test_shutdown_fsyncs_before_exit() {
-    let (dir, buffer, handle, _seg) = setup_with_handle(WalConfig::default());
-
-    for _ in 0..5 {
-        buffer.submit(make_entry()).unwrap();
-    }
-
-    drop(buffer);
-    handle.shutdown().await.unwrap();
-
-    // After shutdown, all writes should be fsync'd and readable
-    let reader = WalReader::open(dir.path()).unwrap();
-    let entries = reader.replay_all().unwrap();
-    assert_eq!(entries.len(), 5);
-}

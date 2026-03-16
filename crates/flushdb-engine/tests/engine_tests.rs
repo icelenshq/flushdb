@@ -839,3 +839,79 @@ async fn test_maybe_compact_triggers_l0_to_l1() {
         assert_eq!(result.unwrap().value, Bytes::from(expected));
     }
 }
+
+#[tokio::test]
+async fn test_scan_spans_memtable_and_sstable() {
+    let dir = TempDir::new().unwrap();
+    let (config, backend) = test_config(&dir, "test-ns");
+    let mut engine = Engine::open(backend, config).await.unwrap();
+
+    // Write k00–k04 into the engine
+    for i in 0..5u32 {
+        let key = format!("k{:02}", i);
+        let value = format!("val{}", i);
+        engine
+            .put(
+                b"rec1",
+                key.as_bytes(),
+                Bytes::from(value),
+                Bytes::new(),
+                None,
+            )
+            .await
+            .unwrap();
+    }
+
+    // Flush to SSTable by closing and reopening
+    engine.close().await.unwrap();
+    let (config2, backend2) = test_config(&dir, "test-ns");
+    let mut engine = Engine::open(backend2, config2).await.unwrap();
+    assert!(engine.l0_count() > 0, "expected data in SSTables after close");
+
+    // Write k05–k09 into the active memtable
+    for i in 5..10u32 {
+        let key = format!("k{:02}", i);
+        let value = format!("val{}", i);
+        engine
+            .put(
+                b"rec1",
+                key.as_bytes(),
+                Bytes::from(value),
+                Bytes::new(),
+                None,
+            )
+            .await
+            .unwrap();
+    }
+
+    // Scan the full range — results should merge memtable + SSTable
+    let result = engine
+        .scan(b"rec1", None, None, RangeReadOptions::default())
+        .await
+        .unwrap();
+
+    assert_eq!(
+        result.entries.len(),
+        10,
+        "expected 10 entries spanning memtable + SSTable"
+    );
+
+    // Verify all 10 keys in sorted order
+    for i in 0..10u32 {
+        let expected_key = format!("k{:02}", i);
+        let expected_val = format!("val{}", i);
+        let entry = &result.entries[i as usize];
+        assert_eq!(
+            entry.composite_key.item_key(),
+            expected_key.as_bytes(),
+            "entry {} has wrong key",
+            i
+        );
+        assert_eq!(
+            entry.value,
+            Bytes::from(expected_val),
+            "entry {} has wrong value",
+            i
+        );
+    }
+}

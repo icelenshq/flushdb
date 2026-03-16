@@ -859,6 +859,57 @@ async fn test_s3_path_out_of_order_insertion_sorted() {
 }
 
 #[tokio::test]
+async fn test_list_prefix_excludes_tmp_files() {
+    let dir = tempdir().expect("failed to create tempdir");
+    let backend = LocalFsBackend::new(dir.path());
+
+    backend
+        .put("real_key", Bytes::from("data"))
+        .await
+        .expect("put failed");
+
+    // Plant a .tmp file to simulate a crash during atomic put.
+    tokio::fs::write(dir.path().join(".tmp.abcdef"), b"partial")
+        .await
+        .expect("failed to write tmp file");
+
+    let keys = backend
+        .list_prefix("")
+        .await
+        .expect("list_prefix failed");
+    assert_eq!(
+        keys,
+        vec!["real_key"],
+        ".tmp.* files must not appear in list_prefix"
+    );
+}
+
+#[tokio::test]
+async fn test_put_leaves_no_tmp_residue() {
+    let dir = tempdir().expect("failed to create tempdir");
+    let backend = LocalFsBackend::new(dir.path());
+
+    for i in 0..10 {
+        backend
+            .put(&format!("key-{i}"), Bytes::from(format!("value-{i}")))
+            .await
+            .expect("put failed");
+    }
+
+    let keys = backend
+        .list_prefix("")
+        .await
+        .expect("list_prefix failed");
+    assert_eq!(keys.len(), 10);
+    for key in &keys {
+        assert!(
+            !key.contains(".tmp."),
+            "tmp file leaked into listing: {key}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn test_double_delete_then_conditional_put() {
     let dir = tempdir().expect("failed to create tempdir");
     let backend = LocalFsBackend::new(dir.path());

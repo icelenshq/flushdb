@@ -64,7 +64,7 @@ impl MergeEntry {
 
 // --- MergeSource ---
 
-pub trait MergeSource {
+pub trait MergeSource: Send {
     fn peek(&self) -> Option<&MergeEntry>;
     fn advance(&mut self);
     fn source_id(&self) -> usize;

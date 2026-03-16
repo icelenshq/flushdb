@@ -441,6 +441,7 @@ fn test_skiplist_default_same_as_new() {
 
 #[test]
 fn test_height_accessor() {
+    use flushdb_engine::skiplist::MAX_HEIGHT;
     let mut sl = SkipList::new();
     let entry = make_entry("rec1", "key1", "val", EntryType::Put);
     sl.insert(entry);
@@ -448,5 +449,5 @@ fn test_height_accessor() {
     let key = CompositeKey::new(b"rec1", b"key1").unwrap();
     let node = sl.get(&key).unwrap();
     assert!(node.height() >= 1);
-    assert!(node.height() <= 12);
+    assert!(node.height() <= MAX_HEIGHT);
 }
