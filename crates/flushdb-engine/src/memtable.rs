@@ -13,13 +13,17 @@ use crate::skiplist::{SkipList, SkipNode};
 pub struct MemtableConfig {
     pub size_threshold: usize,
     pub max_frozen_count: usize,
+    pub memtable_memory_limit: usize,
 }
 
 impl Default for MemtableConfig {
     fn default() -> Self {
+        let size_threshold = 67_108_864;
+        let max_frozen_count = 3;
         Self {
-            size_threshold: 67_108_864,
-            max_frozen_count: 3,
+            size_threshold,
+            max_frozen_count,
+            memtable_memory_limit: (max_frozen_count + 1) * size_threshold,
         }
     }
 }

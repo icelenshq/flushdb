@@ -1,0 +1,22 @@
+[package]
+name = "flushdb-demo"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+flushdb-proto = { path = "../flushdb-proto" }
+tonic = { workspace = true }
+tokio = { workspace = true }
+bytes = { workspace = true }
+prost = { workspace = true }
+tokio-stream = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+rand = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+clap = { workspace = true }
+hdrhistogram = { workspace = true }
+scylla = { workspace = true }
+futures = { workspace = true }

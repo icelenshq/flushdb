@@ -1,0 +1,123 @@
+services:
+  minio:
+    image: minio/minio:RELEASE.2025-02-28T09-55-16Z
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 minioadmin minioadmin;
+      mc mb local/flushdb --ignore-existing;
+      exit 0;
+      "
+
+  flushdb-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: server
+    ports:
+      - "50051:50051"
+      - "9090:9090"
+    environment:
+      FLUSHDB_GRPC_LISTEN_ADDR: "0.0.0.0:50051"
+      FLUSHDB_S3_BUCKET: flushdb
+      FLUSHDB_NODE_ID: "1"
+      FLUSHDB_DATA_DIR: /data
+      FLUSHDB_DEFAULT_NAMESPACES: "ecommerce:4"
+      FLUSHDB_DEFAULT_MEMTABLE_SIZE_MB: "32"
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      AWS_REGION: us-east-1
+      AWS_ENDPOINT_URL: http://minio:9000
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+    volumes:
+      - server-data:/data
+    # --- benchmark: same limits as cassandra ---
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1024M
+
+  cassandra:
+    image: cassandra:4.1
+    # Single-node mode: patch cassandra.yaml before the entrypoint runs.
+    # Strips multi-node overhead so Cassandra runs like a single-pod DB,
+    # matching flushdb's single-node architecture.
+    entrypoint:
+      - bash
+      - -c
+      - |
+        CFG=/etc/cassandra/cassandra.yaml
+        # 1 token = 1 contiguous range, no vnode overhead (flushdb uses fixed partitions)
+        sed -i 's/^num_tokens:.*/num_tokens: 1/' $$CFG
+        # No hinted handoff — single node has no peers to hint
+        sed -i 's/^hinted_handoff_enabled:.*/hinted_handoff_enabled: false/' $$CFG
+        # Unlimited compaction throughput — don't throttle, match flushdb
+        sed -i 's/^compaction_throughput_mb_per_sec:.*/compaction_throughput_mb_per_sec: 0/' $$CFG
+        # Use both CPUs for compaction
+        sed -i 's/^# *concurrent_compactors:.*/concurrent_compactors: 2/' $$CFG
+        exec docker-entrypoint.sh cassandra -f
+    ports:
+      - "9042:9042"
+    environment:
+      CASSANDRA_CLUSTER_NAME: flushdb-benchmark
+      # JVM heap sized to fit within the 1 GB container limit.
+      # 512 MB heap + ~512 MB for off-heap / OS page cache.
+      MAX_HEAP_SIZE: 512M
+      HEAP_NEWSIZE: 128M
+    healthcheck:
+      test: ["CMD", "cqlsh", "-e", "describe keyspaces"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+    volumes:
+      - cassandra-data:/var/lib/cassandra
+    # --- benchmark: same limits as flushdb-server ---
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1024M
+    profiles:
+      - benchmark
+
+  flushdb-demo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: demo
+    environment:
+      FLUSHDB_SERVER_ADDR: "http://flushdb-server:50051"
+      CASSANDRA_ADDR: "cassandra:9042"
+    depends_on:
+      - flushdb-server
+    profiles:
+      - demo
+
+volumes:
+  server-data:
+  cassandra-data:

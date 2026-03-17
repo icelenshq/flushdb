@@ -130,8 +130,8 @@ impl<B: StorageBackend + Clone + 'static> Engine<B> {
         // Flush active memtable if non-empty
         if self.memtable_list.active_entry_count() > 0 {
             self.memtable_list.freeze_active()?;
-            self.generation_counter += 1;
             self.flush_frozen().await?;
+            self.generation_counter += 1;
         }
 
         // Flush remaining frozen memtables
@@ -171,7 +171,7 @@ impl<B: StorageBackend + Clone + 'static> Engine<B> {
 
         // Write to WAL
         let wal_entry = WalEntry::from_memtable_entry(&entry, self.config.namespace.as_bytes());
-        self.wal_manager.append(wal_entry, self.generation_counter)?;
+        self.wal_manager.append(wal_entry, self.generation_counter).await?;
 
         self.memtable_list.insert(entry)?;
         self.continuity_tracker.invalidate_for_record(record_id);
@@ -202,7 +202,7 @@ impl<B: StorageBackend + Clone + 'static> Engine<B> {
         );
 
         let wal_entry = WalEntry::from_memtable_entry(&entry, self.config.namespace.as_bytes());
-        self.wal_manager.append(wal_entry, self.generation_counter)?;
+        self.wal_manager.append(wal_entry, self.generation_counter).await?;
         self.memtable_list.insert(entry)?;
         self.continuity_tracker.invalidate_for_record(record_id);
 
@@ -233,7 +233,7 @@ impl<B: StorageBackend + Clone + 'static> Engine<B> {
         );
 
         let wal_entry = WalEntry::from_memtable_entry(&entry, self.config.namespace.as_bytes());
-        self.wal_manager.append(wal_entry, self.generation_counter)?;
+        self.wal_manager.append(wal_entry, self.generation_counter).await?;
         self.memtable_list.insert(entry)?;
         self.continuity_tracker.invalidate_for_record(record_id);
 
@@ -350,6 +350,29 @@ impl<B: StorageBackend + Clone + 'static> Engine<B> {
             .into_iter()
             .map(|opt| opt.map(|e| GetResult::from_merge_entry(&e)))
             .collect())
+    }
+
+    // --- Maintenance ---
+
+    pub fn run_cache_maintenance(&self) {
+        self.block_cache.run_pending_tasks();
+    }
+
+    pub async fn run_maintenance(&mut self) -> FlushResult<()> {
+        if self.memtable_list.active_entry_count() > 0
+            && self.memtable_list.active().should_freeze_by_age(self.config.flush_config.flush_trigger_age)
+        {
+            self.memtable_list.freeze_active()?;
+            self.generation_counter += 1;
+        }
+
+        while self.memtable_list.has_frozen() {
+            self.flush_frozen().await?;
+        }
+
+        self.run_cache_maintenance();
+
+        Ok(())
     }
 
     // --- Flush Orchestration ---
@@ -548,19 +571,33 @@ impl<B: StorageBackend + Clone + 'static> Engine<B> {
     async fn check_write_stall(&self) -> FlushResult<()> {
         let status = self.write_stall_status();
         match status {
-            WriteStallStatus::Normal => Ok(()),
+            WriteStallStatus::Normal => {}
             WriteStallStatus::Slowdown { delay_ms, .. } => {
                 tokio::time::sleep(Duration::from_millis(delay_ms)).await;
-                Ok(())
             }
-            WriteStallStatus::Stopped { l0_count } => Err(FlushError::ResourceExhausted {
-                resource: "L0 SSTables".into(),
-                message: format!(
-                    "write stalled: L0 count {} >= stop trigger, compact before writing",
-                    l0_count
-                ),
-            }),
+            WriteStallStatus::Stopped { l0_count } => {
+                return Err(FlushError::ResourceExhausted {
+                    resource: "L0 SSTables".into(),
+                    message: format!(
+                        "write stalled: L0 count {} >= stop trigger, compact before writing",
+                        l0_count
+                    ),
+                });
+            }
         }
+
+        if self.memtable_list.is_memory_backpressured() {
+            return Err(FlushError::ResourceExhausted {
+                resource: "memtable_memory".into(),
+                message: format!(
+                    "memtable memory {} exceeds limit {}",
+                    self.memtable_list.total_memory_usage(),
+                    self.config.memtable_config.memtable_memory_limit,
+                ),
+            });
+        }
+
+        Ok(())
     }
 
     async fn maybe_freeze_and_flush(&mut self) -> FlushResult<()> {
@@ -571,8 +608,8 @@ impl<B: StorageBackend + Clone + 'static> Engine<B> {
                 .should_freeze_by_age(self.config.flush_config.flush_trigger_age)
         {
             self.memtable_list.freeze_active()?;
-            self.generation_counter += 1;
             self.flush_frozen().await?;
+            self.generation_counter += 1;
         }
         Ok(())
     }

@@ -108,13 +108,14 @@ impl MergeSource for VecSource {
 
 struct HeapItem {
     key: CompositeKey,
+    seq: u64,
     source_idx: usize,
     source_id: usize,
 }
 
 impl PartialEq for HeapItem {
     fn eq(&self, other: &Self) -> bool {
-        self.key == other.key && self.source_id == other.source_id
+        self.key == other.key && self.seq == other.seq && self.source_id == other.source_id
     }
 }
 
@@ -126,12 +127,16 @@ impl PartialOrd for HeapItem {
     }
 }
 
-// Min-heap: reverse the natural ordering
+// BinaryHeap is a max-heap. We reverse key ordering for min-heap by key,
+// but keep sequence_number in natural order so the newest entry (highest seq)
+// is popped first when keys are equal.
 impl Ord for HeapItem {
     fn cmp(&self, other: &Self) -> Ordering {
-        // We want a min-heap. BinaryHeap is a max-heap, so reverse the comparison.
         match other.key.cmp(&self.key) {
-            Ordering::Equal => other.source_id.cmp(&self.source_id),
+            Ordering::Equal => match self.seq.cmp(&other.seq) {
+                Ordering::Equal => other.source_id.cmp(&self.source_id),
+                ord => ord,
+            },
             ord => ord,
         }
     }
@@ -152,6 +157,7 @@ impl MergeIterator {
             if let Some(entry) = source.peek() {
                 heap.push(HeapItem {
                     key: entry.composite_key.clone(),
+                    seq: entry.sequence_number,
                     source_idx: idx,
                     source_id: source.source_id(),
                 });
@@ -171,6 +177,7 @@ impl MergeIterator {
         if let Some(next) = source.peek() {
             self.heap.push(HeapItem {
                 key: next.composite_key.clone(),
+                seq: next.sequence_number,
                 source_idx: item.source_idx,
                 source_id: item.source_id,
             });

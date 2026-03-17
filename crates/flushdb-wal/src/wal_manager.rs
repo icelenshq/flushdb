@@ -47,18 +47,18 @@ impl WalManager {
         })
     }
 
-    pub fn append(
+    pub async fn append(
         &mut self,
         entry: WalEntry,
         generation_id: u64,
     ) -> FlushResult<DurabilityNotification> {
-        let notification = self.group_commit.submit(entry)?;
+        let notification = self.group_commit.submit(entry).await?;
         let seg_num = self.current_segment_number.load(Ordering::Relaxed);
         self.dirty_tracker.record_write(seg_num, generation_id, 0);
         Ok(notification)
     }
 
-    pub fn append_if_not_full(
+    pub async fn append_if_not_full(
         &mut self,
         entry: WalEntry,
         generation_id: u64,
@@ -73,7 +73,7 @@ impl WalManager {
                 ),
             });
         }
-        self.append(entry, generation_id)
+        self.append(entry, generation_id).await
     }
 
     pub fn recover(partition_dir: &Path) -> FlushResult<Vec<WalEntry>> {
@@ -92,7 +92,11 @@ impl WalManager {
     }
 
     pub fn cleanup_segments(&mut self, segment_numbers: &[u64]) -> FlushResult<()> {
+        let current = self.current_segment_number.load(Ordering::Relaxed);
         for &seg_num in segment_numbers {
+            if seg_num == current {
+                continue;
+            }
             if !self.dirty_tracker.is_segment_clean(seg_num) {
                 continue;
             }

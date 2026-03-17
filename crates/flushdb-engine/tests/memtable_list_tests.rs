@@ -55,6 +55,7 @@ fn small_list() -> MemtableList {
         MemtableConfig {
             size_threshold: 67_108_864,
             max_frozen_count: 2,
+            ..Default::default()
         },
         1,
     )
@@ -475,6 +476,7 @@ fn test_should_freeze_by_size() {
         MemtableConfig {
             size_threshold: 100,
             max_frozen_count: 3,
+            ..Default::default()
         },
         1,
     );
@@ -808,4 +810,31 @@ fn test_frozen_accessor_returns_frozen_slice() {
     list.insert(make_put("r1", "k2", "v2")).unwrap();
     list.freeze_active().unwrap();
     assert_eq!(list.frozen().len(), 2);
+}
+
+// === Memory Backpressure Tests ===
+
+#[test]
+fn test_is_memory_backpressured_under_limit() {
+    let list = new_list();
+    assert!(!list.is_memory_backpressured());
+}
+
+#[test]
+fn test_is_memory_backpressured_over_limit() {
+    let mut list = MemtableList::new(
+        MemtableConfig {
+            size_threshold: 67_108_864,
+            max_frozen_count: 3,
+            memtable_memory_limit: 200,
+        },
+        1,
+    );
+
+    for i in 0..20 {
+        list.insert(make_put("r1", &format!("key{i:04}"), "some_value_that_takes_space"))
+            .unwrap();
+    }
+
+    assert!(list.is_memory_backpressured());
 }

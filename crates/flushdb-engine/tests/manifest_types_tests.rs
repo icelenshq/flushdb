@@ -624,6 +624,27 @@ fn test_sstable_meta_from_sst_info_bare_filename() {
     assert_eq!(meta.id, "bare-name");
 }
 
+#[test]
+fn test_sstable_meta_from_sst_info_fragment_includes_run_dir() {
+    let key = make_composite_key(b"a", b"");
+    let sst_info = SstInfo {
+        path: "flushdb/ns/sstables/L1/run-01ABC/frag-0000.sst".to_string(),
+        entry_count: 1,
+        file_size: 100,
+        min_key: key.clone(),
+        max_key: key.clone(),
+        bloom_filter_offset: 0,
+        bloom_filter_size: 0,
+        index_block_offset: 0,
+        index_block_size: 0,
+        dedup_block_size: 0,
+        compression: CompressionType::None,
+    };
+
+    let meta = SSTableMeta::from_sst_info(&sst_info, (1, 1), 1, 0);
+    assert_eq!(meta.id, "run-01ABC/frag-0000");
+}
+
 // ---------------------------------------------------------------------------
 // Manifest tests
 // ---------------------------------------------------------------------------

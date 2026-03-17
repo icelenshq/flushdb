@@ -65,7 +65,7 @@ async fn test_recover_replays_wal_entries() {
 
     for i in 1..=5u64 {
         let entry = make_wal_entry(b"test-ns", b"rec1", format!("key{i}").as_bytes(), b"val", i);
-        wal.append(entry, 0).unwrap();
+        wal.append(entry, 0).await.unwrap();
     }
     drop(wal);
 
@@ -116,7 +116,7 @@ async fn test_recover_advances_next_sequence_beyond_wal() {
     // Write entries with sequences 1, 2, 3
     for i in 1..=3u64 {
         let entry = make_wal_entry(b"test-ns", b"rec1", format!("key{i}").as_bytes(), b"val", i);
-        wal.append(entry, 0).unwrap();
+        wal.append(entry, 0).await.unwrap();
     }
     drop(wal);
 
@@ -145,6 +145,7 @@ async fn test_recover_skips_entries_at_or_below_last_flushed_sequence() {
             memtable_config: MemtableConfig {
                 size_threshold: 4096,
                 max_frozen_count: 3,
+                ..Default::default()
             },
             wal_config: WalConfig::default(),
             flush_config: FlushConfig {
@@ -194,7 +195,7 @@ async fn test_recover_skips_entries_at_or_below_last_flushed_sequence() {
             format!("new_val{i}").as_bytes(),
             i + 100, // high sequence numbers to avoid overlap with the flushed entries
         );
-        wal.append(entry, 1).unwrap();
+        wal.append(entry, 1).await.unwrap();
     }
     drop(wal);
 

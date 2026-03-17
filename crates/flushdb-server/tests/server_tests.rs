@@ -141,6 +141,7 @@ fn test_config_serde_round_trip() {
         log_format: "pretty".to_string(),
         maintenance_interval_ms: 2000,
         stats_interval_ms: 30000,
+        default_namespaces: vec![("test".to_string(), 4)],
     };
 
     let serialized = serde_json::to_string(&original).expect("serialize");

@@ -75,7 +75,7 @@ pub struct StorageLayer {
 }
 
 fn default_s3_path_prefix(name: &str) -> String {
-    format!("flushdb/{name}/")
+    format!("flushdb/{name}")
 }
 
 fn default_memtable_size() -> u64 {
@@ -144,7 +144,7 @@ pub struct NamespaceConfig {
 }
 
 fn serde_default_s3_path_prefix() -> String {
-    "flushdb/default/".to_string()
+    "flushdb/default".to_string()
 }
 
 impl NamespaceConfig {

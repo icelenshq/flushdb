@@ -694,7 +694,7 @@ fn test_next_entry_returns_all_duplicates() {
 
 #[test]
 fn test_next_entry_ordering_for_same_key() {
-    // For same key, lower source_id entries come first in next_entry
+    // For same key, highest sequence number comes first (newest wins)
     let source0 = vec![make_put("rec", "item", 100)];
     let source1 = vec![make_put("rec", "item", 200)];
     let source2 = vec![make_put("rec", "item", 50)];
@@ -707,10 +707,10 @@ fn test_next_entry_ordering_for_same_key() {
 
     let results = collect_all(&mut iter);
     assert_eq!(results.len(), 3);
-    // Ordered by source_id when key is equal
-    assert_eq!(results[0].sequence_number, 100); // source 0
-    assert_eq!(results[1].sequence_number, 200); // source 1
-    assert_eq!(results[2].sequence_number, 50);  // source 2
+    // Ordered by sequence number descending (newest first)
+    assert_eq!(results[0].sequence_number, 200); // highest seq
+    assert_eq!(results[1].sequence_number, 100);
+    assert_eq!(results[2].sequence_number, 50);  // lowest seq
 }
 
 // =============================================================================

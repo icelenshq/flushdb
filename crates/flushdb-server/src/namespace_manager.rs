@@ -5,6 +5,7 @@ use bytes::Bytes;
 use dashmap::DashMap;
 use flushdb_engine::{GetResult, RangeReadOptions, RangeReadResult};
 use flushdb_types::{FlushError, FlushResult, IdempotencyToken, OrderedKey, StorageBackend};
+use tokio::sync::RwLock;
 
 use crate::namespace_config::NamespaceConfig;
 use crate::partition::Partition;
@@ -14,7 +15,7 @@ use crate::version_generator::VersionGenerator;
 pub struct NamespaceState<B: StorageBackend> {
     pub config: NamespaceConfig,
     pub router: LocalPartitionRouter,
-    pub partitions: Vec<Partition<B>>,
+    pub partitions: Vec<Arc<RwLock<Partition<B>>>>,
 }
 
 pub struct NamespaceManager<B: StorageBackend> {
@@ -55,7 +56,7 @@ impl<B: StorageBackend + Clone + 'static> NamespaceManager<B> {
                 &config,
             )
             .await?;
-            partitions.push(partition);
+            partitions.push(Arc::new(RwLock::new(partition)));
         }
 
         let router = LocalPartitionRouter::new(&config);
@@ -95,18 +96,21 @@ impl<B: StorageBackend + Clone + 'static> NamespaceManager<B> {
     }
 
     pub async fn delete_namespace(&self, namespace: &str) -> FlushResult<()> {
-        let mut entry = self
-            .namespaces
-            .get_mut(namespace)
-            .ok_or_else(|| FlushError::NotFound {
-                key: format!("namespace: {}", namespace),
-            })?;
+        let partition_arcs: Vec<Arc<RwLock<Partition<B>>>> = {
+            let entry = self
+                .namespaces
+                .get(namespace)
+                .ok_or_else(|| FlushError::NotFound {
+                    key: format!("namespace: {}", namespace),
+                })?;
+            entry.partitions.iter().map(Arc::clone).collect()
+        };
 
-        for partition in entry.partitions.iter_mut() {
+        for partition_arc in &partition_arcs {
+            let mut partition = partition_arc.write().await;
             partition.stop().await?;
         }
 
-        drop(entry);
         self.namespaces.remove(namespace);
 
         Ok(())
@@ -126,6 +130,33 @@ impl<B: StorageBackend + Clone + 'static> NamespaceManager<B> {
         self.namespaces.contains_key(namespace)
     }
 
+    // --- Partition Resolution ---
+    // Resolves namespace + record_id to a partition Arc without holding the
+    // DashMap guard across await points, preventing deadlocks.
+
+    fn resolve_partition(
+        &self,
+        namespace: &str,
+        record_id: &str,
+    ) -> FlushResult<Arc<RwLock<Partition<B>>>> {
+        let entry = self
+            .namespaces
+            .get(namespace)
+            .ok_or_else(|| FlushError::NotFound {
+                key: format!("namespace: {}", namespace),
+            })?;
+
+        let partition_id = entry.router.route(record_id)? as usize;
+        let partition = entry
+            .partitions
+            .get(partition_id)
+            .ok_or_else(|| FlushError::InvalidArgument {
+                message: format!("partition index out of bounds: {}", partition_id),
+            })?;
+
+        Ok(Arc::clone(partition))
+    }
+
     // --- Request Dispatch ---
 
     pub async fn put(
@@ -137,21 +168,8 @@ impl<B: StorageBackend + Clone + 'static> NamespaceManager<B> {
         metadata: Bytes,
         idempotency_token: IdempotencyToken,
     ) -> FlushResult<u64> {
-        let mut entry = self
-            .namespaces
-            .get_mut(namespace)
-            .ok_or_else(|| FlushError::NotFound {
-                key: format!("namespace: {}", namespace),
-            })?;
-
-        let partition_id = entry.router.route(record_id)? as usize;
-        let partition = entry
-            .partitions
-            .get_mut(partition_id)
-            .ok_or_else(|| FlushError::InvalidArgument {
-                message: format!("partition index out of bounds: {}", partition_id),
-            })?;
-
+        let partition_arc = self.resolve_partition(namespace, record_id)?;
+        let mut partition = partition_arc.write().await;
         partition
             .put(
                 record_id.as_bytes(),
@@ -169,21 +187,8 @@ impl<B: StorageBackend + Clone + 'static> NamespaceManager<B> {
         record_id: &str,
         item_key: &[u8],
     ) -> FlushResult<u64> {
-        let mut entry = self
-            .namespaces
-            .get_mut(namespace)
-            .ok_or_else(|| FlushError::NotFound {
-                key: format!("namespace: {}", namespace),
-            })?;
-
-        let partition_id = entry.router.route(record_id)? as usize;
-        let partition = entry
-            .partitions
-            .get_mut(partition_id)
-            .ok_or_else(|| FlushError::InvalidArgument {
-                message: format!("partition index out of bounds: {}", partition_id),
-            })?;
-
+        let partition_arc = self.resolve_partition(namespace, record_id)?;
+        let mut partition = partition_arc.write().await;
         partition.delete(record_id.as_bytes(), item_key).await
     }
 
@@ -194,21 +199,8 @@ impl<B: StorageBackend + Clone + 'static> NamespaceManager<B> {
         start_key: &[u8],
         end_key: &[u8],
     ) -> FlushResult<u64> {
-        let mut entry = self
-            .namespaces
-            .get_mut(namespace)
-            .ok_or_else(|| FlushError::NotFound {
-                key: format!("namespace: {}", namespace),
-            })?;
-
-        let partition_id = entry.router.route(record_id)? as usize;
-        let partition = entry
-            .partitions
-            .get_mut(partition_id)
-            .ok_or_else(|| FlushError::InvalidArgument {
-                message: format!("partition index out of bounds: {}", partition_id),
-            })?;
-
+        let partition_arc = self.resolve_partition(namespace, record_id)?;
+        let mut partition = partition_arc.write().await;
         partition
             .delete_range(record_id.as_bytes(), start_key, end_key)
             .await
@@ -220,21 +212,8 @@ impl<B: StorageBackend + Clone + 'static> NamespaceManager<B> {
         record_id: &str,
         item_key: &[u8],
     ) -> FlushResult<Option<GetResult>> {
-        let entry = self
-            .namespaces
-            .get(namespace)
-            .ok_or_else(|| FlushError::NotFound {
-                key: format!("namespace: {}", namespace),
-            })?;
-
-        let partition_id = entry.router.route(record_id)? as usize;
-        let partition = entry
-            .partitions
-            .get(partition_id)
-            .ok_or_else(|| FlushError::InvalidArgument {
-                message: format!("partition index out of bounds: {}", partition_id),
-            })?;
-
+        let partition_arc = self.resolve_partition(namespace, record_id)?;
+        let partition = partition_arc.read().await;
         partition.get(record_id.as_bytes(), item_key).await
     }
 
@@ -246,21 +225,8 @@ impl<B: StorageBackend + Clone + 'static> NamespaceManager<B> {
         end_key: Option<&[u8]>,
         options: RangeReadOptions,
     ) -> FlushResult<RangeReadResult> {
-        let entry = self
-            .namespaces
-            .get(namespace)
-            .ok_or_else(|| FlushError::NotFound {
-                key: format!("namespace: {}", namespace),
-            })?;
-
-        let partition_id = entry.router.route(record_id)? as usize;
-        let partition = entry
-            .partitions
-            .get(partition_id)
-            .ok_or_else(|| FlushError::InvalidArgument {
-                message: format!("partition index out of bounds: {}", partition_id),
-            })?;
-
+        let partition_arc = self.resolve_partition(namespace, record_id)?;
+        let partition = partition_arc.read().await;
         partition
             .scan(record_id.as_bytes(), start_key, end_key, options)
             .await
@@ -272,50 +238,51 @@ impl<B: StorageBackend + Clone + 'static> NamespaceManager<B> {
         record_id: &str,
         keys: &[&[u8]],
     ) -> FlushResult<Vec<Option<GetResult>>> {
-        let entry = self
-            .namespaces
-            .get(namespace)
-            .ok_or_else(|| FlushError::NotFound {
-                key: format!("namespace: {}", namespace),
-            })?;
-
-        let partition_id = entry.router.route(record_id)? as usize;
-        let partition = entry
-            .partitions
-            .get(partition_id)
-            .ok_or_else(|| FlushError::InvalidArgument {
-                message: format!("partition index out of bounds: {}", partition_id),
-            })?;
-
+        let partition_arc = self.resolve_partition(namespace, record_id)?;
+        let partition = partition_arc.read().await;
         partition.multi_get(record_id.as_bytes(), keys).await
     }
 
     // --- Background Maintenance ---
 
     pub async fn run_maintenance(&self) -> FlushResult<()> {
-        for mut entry in self.namespaces.iter_mut() {
-            for partition in entry.partitions.iter_mut() {
-                partition.maybe_flush().await?;
-                partition.maybe_compact().await?;
-            }
+        let partition_arcs: Vec<Arc<RwLock<Partition<B>>>> = self
+            .namespaces
+            .iter()
+            .flat_map(|entry| entry.partitions.iter().map(Arc::clone).collect::<Vec<_>>())
+            .collect();
+
+        for partition_arc in &partition_arcs {
+            let mut partition = partition_arc.write().await;
+            partition.run_maintenance().await?;
         }
         Ok(())
     }
 
     pub async fn flush_all(&self) -> FlushResult<()> {
-        for mut entry in self.namespaces.iter_mut() {
-            for partition in entry.partitions.iter_mut() {
-                partition.maybe_flush().await?;
-            }
+        let partition_arcs: Vec<Arc<RwLock<Partition<B>>>> = self
+            .namespaces
+            .iter()
+            .flat_map(|entry| entry.partitions.iter().map(Arc::clone).collect::<Vec<_>>())
+            .collect();
+
+        for partition_arc in &partition_arcs {
+            let mut partition = partition_arc.write().await;
+            partition.maybe_flush().await?;
         }
         Ok(())
     }
 
     pub async fn stop_all(&self) -> FlushResult<()> {
-        for mut entry in self.namespaces.iter_mut() {
-            for partition in entry.partitions.iter_mut() {
-                partition.stop().await?;
-            }
+        let partition_arcs: Vec<Arc<RwLock<Partition<B>>>> = self
+            .namespaces
+            .iter()
+            .flat_map(|entry| entry.partitions.iter().map(Arc::clone).collect::<Vec<_>>())
+            .collect();
+
+        for partition_arc in &partition_arcs {
+            let mut partition = partition_arc.write().await;
+            partition.stop().await?;
         }
         Ok(())
     }

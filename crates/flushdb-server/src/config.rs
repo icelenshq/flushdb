@@ -65,6 +65,8 @@ pub struct ServerConfig {
     pub maintenance_interval_ms: u64,
     #[serde(default = "default_stats_interval")]
     pub stats_interval_ms: u64,
+    #[serde(default)]
+    pub default_namespaces: Vec<(String, u32)>,
 }
 
 impl Default for ServerConfig {
@@ -81,6 +83,7 @@ impl Default for ServerConfig {
             log_format: default_log_format(),
             maintenance_interval_ms: default_maintenance_interval(),
             stats_interval_ms: default_stats_interval(),
+            default_namespaces: Vec::new(),
         }
     }
 }
@@ -130,6 +133,45 @@ impl ServerConfig {
 
         if let Ok(val) = std::env::var("FLUSHDB_LOG_FORMAT") {
             config.log_format = val;
+        }
+
+        if let Ok(val) = std::env::var("FLUSHDB_DEFAULT_NAMESPACES") {
+            let mut namespaces = Vec::new();
+            for entry in val.split(',') {
+                let entry = entry.trim();
+                if entry.is_empty() {
+                    continue;
+                }
+                let parts: Vec<&str> = entry.splitn(2, ':').collect();
+                if parts.len() != 2 {
+                    return Err(FlushError::InvalidArgument {
+                        message: format!(
+                            "invalid FLUSHDB_DEFAULT_NAMESPACES entry '{}': expected 'name:partition_count'",
+                            entry
+                        ),
+                    });
+                }
+                let name = parts[0].to_string();
+                let count: u32 = parts[1].parse().map_err(|e: std::num::ParseIntError| {
+                    FlushError::InvalidArgument {
+                        message: format!(
+                            "invalid partition count in FLUSHDB_DEFAULT_NAMESPACES entry '{}': {}",
+                            entry, e
+                        ),
+                    }
+                })?;
+                namespaces.push((name, count));
+            }
+            config.default_namespaces = namespaces;
+        }
+
+        if let Ok(val) = std::env::var("FLUSHDB_DEFAULT_MEMTABLE_SIZE_MB") {
+            config.default_memtable_size_mb =
+                val.parse().map_err(|e: std::num::ParseIntError| {
+                    FlushError::InvalidArgument {
+                        message: format!("invalid FLUSHDB_DEFAULT_MEMTABLE_SIZE_MB: {e}"),
+                    }
+                })?;
         }
 
         Ok(config)

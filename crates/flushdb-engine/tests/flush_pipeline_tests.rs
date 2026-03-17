@@ -31,6 +31,7 @@ fn populated_memtable(count: usize) -> Memtable {
     let config = MemtableConfig {
         size_threshold: 64 * 1024 * 1024,
         max_frozen_count: 3,
+        ..Default::default()
     };
     let mut mt = Memtable::new(config, 1);
     for i in 0..count {
@@ -127,6 +128,7 @@ async fn test_flush_includes_tombstones() {
     let mt_config = MemtableConfig {
         size_threshold: 64 * 1024 * 1024,
         max_frozen_count: 3,
+        ..Default::default()
     };
     let mut mt = Memtable::new(mt_config, 1);
     mt.insert(make_entry(b"rec1", b"key1", b"val1")).unwrap();
@@ -195,6 +197,7 @@ fn test_should_freeze_by_size_threshold() {
     let config = MemtableConfig {
         size_threshold: 100,
         max_frozen_count: 3,
+        ..Default::default()
     };
     let mut mt = Memtable::new(config, 1);
 
