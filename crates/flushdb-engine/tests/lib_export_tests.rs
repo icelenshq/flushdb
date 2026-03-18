@@ -64,6 +64,7 @@ fn test_full_lifecycle() {
     let config = MemtableConfig {
         size_threshold: 67_108_864,
         max_frozen_count: 3,
+        ..Default::default()
     };
     let mut list = MemtableList::new(config, 1);
 
@@ -106,6 +107,7 @@ fn test_flush_pipeline_simulation() {
     let config = MemtableConfig {
         size_threshold: 67_108_864,
         max_frozen_count: 3,
+        ..Default::default()
     };
     let mut list = MemtableList::new(config, 1);
 

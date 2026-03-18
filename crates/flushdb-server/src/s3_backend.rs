@@ -58,8 +58,15 @@ impl S3StorageBackend {
                 message: "bucket name must not be empty".to_string(),
             });
         }
-        let config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
-        let client = aws_sdk_s3::Client::new(&config);
+        let shared_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
+        let client = if std::env::var("AWS_ENDPOINT_URL").is_ok() {
+            let s3_config = aws_sdk_s3::config::Builder::from(&shared_config)
+                .force_path_style(true)
+                .build();
+            aws_sdk_s3::Client::from_conf(s3_config)
+        } else {
+            aws_sdk_s3::Client::new(&shared_config)
+        };
         Ok(Self {
             client,
             bucket,
@@ -333,8 +340,8 @@ impl StorageBackend for S3StorageBackend {
     }
 }
 
-fn map_sdk_error_generic<E: std::fmt::Display>(err: &E) -> FlushError {
-    FlushError::Io(std::io::Error::other(err.to_string()))
+fn map_sdk_error_generic<E: std::fmt::Debug>(err: &E) -> FlushError {
+    FlushError::Io(std::io::Error::other(format!("{err:?}")))
 }
 
 fn map_get_error(

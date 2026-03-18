@@ -17,6 +17,7 @@ fn test_config(dir: &TempDir, namespace: &str) -> (EngineConfig, LocalFsBackend)
         memtable_config: MemtableConfig {
             size_threshold: 4096,
             max_frozen_count: 3,
+            ..Default::default()
         },
         wal_config: WalConfig::default(),
         flush_config: FlushConfig {
@@ -215,6 +216,7 @@ fn budget_test_config(dir: &TempDir, namespace: &str, budget: u32) -> (EngineCon
         memtable_config: MemtableConfig {
             size_threshold: 256,
             max_frozen_count: 3,
+            ..Default::default()
         },
         wal_config: WalConfig::default(),
         flush_config: FlushConfig {

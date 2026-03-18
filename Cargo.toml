@@ -6,6 +6,7 @@ members = [
     "crates/flushdb-engine",
     "crates/flushdb-server",
     "crates/flushdb-test",
+    "crates/flushdb-demo",
 ]
 resolver = "2"
 
@@ -35,8 +36,12 @@ metrics = "0.24"
 metrics-exporter-prometheus = "0.16"
 parking_lot = "0.12"
 dashmap = "6"
+libc = "0.2"
 testcontainers = "0.23"
 testcontainers-modules = { version = "0.11", features = ["minio"] }
 fnv = "1"
 futures = "0.3"
 tokio-stream = "0.1"
+clap = { version = "4", features = ["derive", "env"] }
+hdrhistogram = "7"
+scylla = "0.14"

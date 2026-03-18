@@ -114,6 +114,10 @@ impl MemtableList {
         self.frozen.len() >= self.config.max_frozen_count
     }
 
+    pub fn is_memory_backpressured(&self) -> bool {
+        self.total_memory_usage() >= self.config.memtable_memory_limit
+    }
+
     pub fn active_memory_usage(&self) -> usize {
         self.active.approximate_memory_usage()
     }

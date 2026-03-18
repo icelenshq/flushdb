@@ -49,7 +49,7 @@ async fn test_open_on_existing_wal_recovers_sequence() {
     {
         let mut manager = WalManager::open(dir.path(), config.clone()).unwrap();
         for _ in 0..5 {
-            let notif = manager.append(make_entry(), 1).unwrap();
+            let notif = manager.append(make_entry(), 1).await.unwrap();
             notif.await.unwrap().unwrap();
         }
         manager.shutdown().await.unwrap();
@@ -58,7 +58,7 @@ async fn test_open_on_existing_wal_recovers_sequence() {
     // Second open: write one more and verify sequence continues
     {
         let mut manager = WalManager::open(dir.path(), config).unwrap();
-        let notif = manager.append(make_entry(), 2).unwrap();
+        let notif = manager.append(make_entry(), 2).await.unwrap();
         notif.await.unwrap().unwrap();
         manager.shutdown().await.unwrap();
     }
@@ -84,7 +84,7 @@ async fn test_shutdown_flushes_pending_writes() {
 
     let mut notifs = Vec::new();
     for _ in 0..5 {
-        notifs.push(manager.append(make_entry(), 1).unwrap());
+        notifs.push(manager.append(make_entry(), 1).await.unwrap());
     }
 
     manager.shutdown().await.unwrap();
@@ -106,7 +106,7 @@ async fn test_append_notification_fires() {
     let config = WalConfig::default();
     let mut manager = WalManager::open(dir.path(), config).unwrap();
 
-    let notif = manager.append(make_entry(), 1).unwrap();
+    let notif = manager.append(make_entry(), 1).await.unwrap();
     let result = tokio::time::timeout(std::time::Duration::from_secs(5), notif)
         .await
         .expect("notification should fire within timeout");
@@ -121,7 +121,7 @@ async fn test_append_multiple_writes() {
     let mut manager = WalManager::open(dir.path(), config).unwrap();
 
     for _ in 0..100 {
-        let notif = manager.append(make_entry(), 1).unwrap();
+        let notif = manager.append(make_entry(), 1).await.unwrap();
         notif.await.unwrap().unwrap();
     }
     manager.shutdown().await.unwrap();
@@ -146,7 +146,7 @@ async fn test_append_preserves_entry_data() {
         item_metadata: Bytes::from_static(b"expired"),
         idempotency_token: IdempotencyToken::none(),
     };
-    let notif = manager.append(entry, 1).unwrap();
+    let notif = manager.append(entry, 1).await.unwrap();
     notif.await.unwrap().unwrap();
     manager.shutdown().await.unwrap();
 
@@ -166,7 +166,7 @@ async fn test_recover_reads_all_entries() {
     let mut manager = WalManager::open(dir.path(), config).unwrap();
 
     for _ in 0..20 {
-        let notif = manager.append(make_entry(), 1).unwrap();
+        let notif = manager.append(make_entry(), 1).await.unwrap();
         notif.await.unwrap().unwrap();
     }
     manager.shutdown().await.unwrap();
@@ -182,7 +182,7 @@ async fn test_recover_from_filters_by_sequence() {
     let mut manager = WalManager::open(dir.path(), config).unwrap();
 
     for _ in 0..20 {
-        let notif = manager.append(make_entry(), 1).unwrap();
+        let notif = manager.append(make_entry(), 1).await.unwrap();
         notif.await.unwrap().unwrap();
     }
     manager.shutdown().await.unwrap();
@@ -210,7 +210,7 @@ async fn test_recover_after_crash_simulation() {
     let mut manager = WalManager::open(dir.path(), config).unwrap();
 
     for _ in 0..10 {
-        let notif = manager.append(make_entry(), 1).unwrap();
+        let notif = manager.append(make_entry(), 1).await.unwrap();
         notif.await.unwrap().unwrap();
     }
 
@@ -235,7 +235,7 @@ async fn test_backpressure_rejects_writes() {
     // Write until backpressure kicks in
     let mut rejected = false;
     for _ in 0..100 {
-        match manager.append_if_not_full(make_large_entry(), 1) {
+        match manager.append_if_not_full(make_large_entry(), 1).await {
             Ok(notif) => {
                 let _ = notif.await;
             }
@@ -262,7 +262,7 @@ async fn test_is_backpressured_reflects_wal_size() {
 
     // Initially not backpressured (but may already exceed with header)
     for _ in 0..20 {
-        match manager.append_if_not_full(make_large_entry(), 1) {
+        match manager.append_if_not_full(make_large_entry(), 1).await {
             Ok(notif) => {
                 let _ = notif.await;
             }
@@ -285,7 +285,7 @@ async fn test_mark_flushed_returns_clean_segments() {
     let config = WalConfig::default();
     let mut manager = WalManager::open(dir.path(), config).unwrap();
 
-    let notif = manager.append(make_entry(), 1).unwrap();
+    let notif = manager.append(make_entry(), 1).await.unwrap();
     notif.await.unwrap().unwrap();
 
     let clean = manager.mark_generation_flushed(1).unwrap();
@@ -305,7 +305,7 @@ async fn test_cleanup_deletes_clean_segments() {
 
     // Write enough to create multiple segments
     for _ in 0..50 {
-        let notif = manager.append(make_large_entry(), 1).unwrap();
+        let notif = manager.append(make_large_entry(), 1).await.unwrap();
         notif.await.unwrap().unwrap();
     }
 
@@ -349,7 +349,7 @@ async fn test_cleanup_skips_dirty_segments() {
     let config = WalConfig::default();
     let mut manager = WalManager::open(dir.path(), config).unwrap();
 
-    let notif = manager.append(make_entry(), 1).unwrap();
+    let notif = manager.append(make_entry(), 1).await.unwrap();
     notif.await.unwrap().unwrap();
 
     // Try to clean segment without marking as flushed (it's dirty)
@@ -394,13 +394,13 @@ async fn test_full_lifecycle() {
 
     // Write with gen 1
     for _ in 0..20 {
-        let notif = manager.append(make_large_entry(), 1).unwrap();
+        let notif = manager.append(make_large_entry(), 1).await.unwrap();
         notif.await.unwrap().unwrap();
     }
 
     // Write with gen 2
     for _ in 0..20 {
-        let notif = manager.append(make_large_entry(), 2).unwrap();
+        let notif = manager.append(make_large_entry(), 2).await.unwrap();
         notif.await.unwrap().unwrap();
     }
 
@@ -444,7 +444,7 @@ async fn test_wal_size_reflects_total_segment_size() {
     assert!(size_empty > 0, "even empty WAL has a segment with header");
 
     for _ in 0..10 {
-        let notif = manager.append(make_entry(), 1).unwrap();
+        let notif = manager.append(make_entry(), 1).await.unwrap();
         notif.await.unwrap().unwrap();
     }
 
@@ -479,9 +479,9 @@ async fn test_flush_triggers_oldest_pinned_generation() {
     let mut manager = WalManager::open(dir.path(), config).unwrap();
 
     // Write entries across two generations
-    let notif = manager.append(make_entry(), 5).unwrap();
+    let notif = manager.append(make_entry(), 5).await.unwrap();
     notif.await.unwrap().unwrap();
-    let notif = manager.append(make_entry(), 10).unwrap();
+    let notif = manager.append(make_entry(), 10).await.unwrap();
     notif.await.unwrap().unwrap();
 
     let triggers = manager.flush_triggers().unwrap();
@@ -513,7 +513,7 @@ async fn test_flush_triggers_size_pressure() {
     let mut manager = WalManager::open(dir.path(), config).unwrap();
 
     for _ in 0..50 {
-        let notif = manager.append(make_large_entry(), 1).unwrap();
+        let notif = manager.append(make_large_entry(), 1).await.unwrap();
         notif.await.unwrap().unwrap();
     }
 
@@ -534,7 +534,7 @@ async fn test_flush_triggers_age_triggered_segments() {
     };
     let mut manager = WalManager::open(dir.path(), config).unwrap();
 
-    let notif = manager.append(make_entry(), 1).unwrap();
+    let notif = manager.append(make_entry(), 1).await.unwrap();
     notif.await.unwrap().unwrap();
 
     // Wait for the segment to age past the threshold

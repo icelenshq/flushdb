@@ -109,30 +109,42 @@ pub fn parse_predicate(predicate: Option<proto::Predicate>) -> FlushResult<Parse
             Ok(ParsedPredicate::MatchKeys { keys })
         }
         proto::predicate::Predicate::MatchRange(mr) => {
-            let start_key = if mr.start_key.is_empty() {
-                None
-            } else {
-                Some(Bytes::from(mr.start_key))
-            };
-            let end_key = if mr.end_key.is_empty() {
-                None
-            } else {
-                Some(Bytes::from(mr.end_key))
-            };
-
-            if let (Some(ref s), Some(ref e)) = (&start_key, &end_key) {
-                if s > e {
+            if let (false, false) = (mr.start_key.is_empty(), mr.end_key.is_empty()) {
+                if mr.start_key > mr.end_key {
                     return Err(FlushError::InvalidArgument {
                         message: "match_range: start_key must be <= end_key".into(),
                     });
                 }
             }
 
+            // Transform to canonical [start, end) bounds that the engine expects.
+            // Exclusive start: advance past start_key by appending 0x00.
+            // Inclusive end: advance past end_key by appending 0x00.
+            let start_key = if mr.start_key.is_empty() {
+                None
+            } else if mr.start_inclusive {
+                Some(Bytes::from(mr.start_key))
+            } else {
+                let mut adjusted = mr.start_key;
+                adjusted.push(0x00);
+                Some(Bytes::from(adjusted))
+            };
+
+            let end_key = if mr.end_key.is_empty() {
+                None
+            } else if mr.end_inclusive {
+                let mut adjusted = mr.end_key;
+                adjusted.push(0x00);
+                Some(Bytes::from(adjusted))
+            } else {
+                Some(Bytes::from(mr.end_key))
+            };
+
             Ok(ParsedPredicate::MatchRange {
                 start_key,
                 end_key,
-                start_inclusive: mr.start_inclusive,
-                end_inclusive: mr.end_inclusive,
+                start_inclusive: true,
+                end_inclusive: false,
             })
         }
         proto::predicate::Predicate::MatchAll(_) => Ok(ParsedPredicate::MatchAll),

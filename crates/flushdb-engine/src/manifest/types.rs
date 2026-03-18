@@ -260,12 +260,18 @@ impl SSTableMeta {
         created_at_ms: u64,
     ) -> Self {
         let path = &info.path;
-        let id = path
-            .rsplit('/')
-            .next()
-            .unwrap_or(path)
-            .trim_end_matches(".sst")
-            .to_string();
+        // For fragment paths like ".../run-ULID/frag-0000.sst", include the
+        // run directory in the ID so that fragments from different compaction
+        // runs don't collide (frag-0000 is only unique within a run).
+        let id = {
+            let segments: Vec<&str> = path.rsplitn(3, '/').collect();
+            let filename = segments[0].trim_end_matches(".sst");
+            if segments.len() >= 2 && segments[1].starts_with("run-") {
+                format!("{}/{}", segments[1], filename)
+            } else {
+                filename.to_string()
+            }
+        };
 
         Self {
             id,

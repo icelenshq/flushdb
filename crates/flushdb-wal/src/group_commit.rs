@@ -39,13 +39,13 @@ impl GroupCommitBuffer {
         (buffer, handle)
     }
 
-    pub fn submit(&self, entry: WalEntry) -> FlushResult<DurabilityNotification> {
+    pub async fn submit(&self, entry: WalEntry) -> FlushResult<DurabilityNotification> {
         let (tx, rx) = oneshot::channel();
         let pending = PendingWrite {
             entry,
             notifier: tx,
         };
-        self.sender.try_send(pending).map_err(|_| FlushError::Io(
+        self.sender.send(pending).await.map_err(|_| FlushError::Io(
             std::io::Error::new(
                 std::io::ErrorKind::BrokenPipe,
                 "group commit loop has shut down",

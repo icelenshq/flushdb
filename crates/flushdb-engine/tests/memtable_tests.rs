@@ -358,6 +358,7 @@ fn test_should_freeze_by_size() {
     let config = MemtableConfig {
         size_threshold: 100,
         max_frozen_count: 3,
+        ..Default::default()
     };
     let mut mt = Memtable::new(config, 1);
 

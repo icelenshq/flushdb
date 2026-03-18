@@ -17,6 +17,7 @@ fn test_config(dir: &TempDir, namespace: &str) -> (EngineConfig, LocalFsBackend)
         memtable_config: MemtableConfig {
             size_threshold: 4096,
             max_frozen_count: 3,
+            ..Default::default()
         },
         wal_config: WalConfig::default(),
         flush_config: FlushConfig {
@@ -741,6 +742,7 @@ async fn test_maybe_compact_triggers_l0_to_l1() {
         memtable_config: MemtableConfig {
             size_threshold: 512,
             max_frozen_count: 3,
+            ..Default::default()
         },
         wal_config: WalConfig::default(),
         flush_config: FlushConfig {
@@ -792,6 +794,7 @@ async fn test_maybe_compact_triggers_l0_to_l1() {
         memtable_config: MemtableConfig {
             size_threshold: 512,
             max_frozen_count: 3,
+            ..Default::default()
         },
         wal_config: WalConfig::default(),
         flush_config: FlushConfig {
@@ -913,5 +916,173 @@ async fn test_scan_spans_memtable_and_sstable() {
             "entry {} has wrong value",
             i
         );
+    }
+}
+
+// === run_maintenance Tests ===
+
+#[tokio::test]
+async fn test_run_maintenance_freezes_aged_memtable() {
+    let dir = TempDir::new().unwrap();
+    let storage_dir = dir.path().join("storage");
+    std::fs::create_dir_all(&storage_dir).unwrap();
+
+    let backend = LocalFsBackend::new(storage_dir);
+    let config = EngineConfig {
+        memtable_config: MemtableConfig {
+            size_threshold: 4096,
+            max_frozen_count: 3,
+            ..Default::default()
+        },
+        wal_config: WalConfig::default(),
+        flush_config: FlushConfig {
+            sst_config: flushdb_engine::sstable::types::SstConfig::default(),
+            max_frozen_count: 3,
+            flush_trigger_size: 4096,
+            flush_trigger_age: std::time::Duration::from_millis(1),
+        },
+        compaction_config: CompactionConfig::default(),
+        manifest_config: ManifestConfig {
+            base_path: "flushdb".to_string(),
+            ..ManifestConfig::default()
+        },
+        cache_config: CacheConfig::default(),
+        namespace: "maint-ns".to_string(),
+        local_dir: dir.path().to_path_buf(),
+    };
+
+    let mut engine = Engine::open(backend, config).await.unwrap();
+
+    engine
+        .put(b"rec1", b"key1", Bytes::from("value1"), Bytes::new(), None)
+        .await
+        .unwrap();
+
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+
+    engine.run_maintenance().await.unwrap();
+
+    assert_eq!(engine.frozen_memtable_count(), 0);
+    assert!(engine.l0_count() > 0, "aged memtable should have been flushed to L0");
+}
+
+#[tokio::test]
+async fn test_run_maintenance_skips_empty_active() {
+    let dir = TempDir::new().unwrap();
+    let storage_dir = dir.path().join("storage");
+    std::fs::create_dir_all(&storage_dir).unwrap();
+
+    let backend = LocalFsBackend::new(storage_dir);
+    let config = EngineConfig {
+        memtable_config: MemtableConfig {
+            size_threshold: 4096,
+            max_frozen_count: 3,
+            ..Default::default()
+        },
+        wal_config: WalConfig::default(),
+        flush_config: FlushConfig {
+            sst_config: flushdb_engine::sstable::types::SstConfig::default(),
+            max_frozen_count: 3,
+            flush_trigger_size: 4096,
+            flush_trigger_age: std::time::Duration::from_millis(1),
+        },
+        compaction_config: CompactionConfig::default(),
+        manifest_config: ManifestConfig {
+            base_path: "flushdb".to_string(),
+            ..ManifestConfig::default()
+        },
+        cache_config: CacheConfig::default(),
+        namespace: "maint-ns".to_string(),
+        local_dir: dir.path().to_path_buf(),
+    };
+
+    let mut engine = Engine::open(backend, config).await.unwrap();
+
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+
+    engine.run_maintenance().await.unwrap();
+
+    assert_eq!(engine.frozen_memtable_count(), 0);
+    assert_eq!(engine.l0_count(), 0);
+}
+
+#[tokio::test]
+async fn test_run_maintenance_flushes_pending_frozen() {
+    let dir = TempDir::new().unwrap();
+    let (config, backend) = test_config(&dir, "maint-ns");
+
+    let mut engine = Engine::open(backend, config).await.unwrap();
+
+    // Write enough to trigger size-based freeze (threshold is 4096)
+    for i in 0..100u32 {
+        let key = format!("key{:04}", i);
+        let value = format!("value_{}", i);
+        engine
+            .put(b"rec1", key.as_bytes(), Bytes::from(value), Bytes::new(), None)
+            .await
+            .unwrap();
+    }
+
+    // run_maintenance should flush any remaining frozen memtables
+    engine.run_maintenance().await.unwrap();
+
+    assert_eq!(engine.frozen_memtable_count(), 0);
+    assert!(engine.l0_count() > 0, "frozen memtables should have been flushed");
+}
+
+#[tokio::test]
+async fn test_write_stall_rejects_on_memory_pressure() {
+    let dir = TempDir::new().unwrap();
+    let storage_dir = dir.path().join("storage");
+    std::fs::create_dir_all(&storage_dir).unwrap();
+
+    let backend = LocalFsBackend::new(storage_dir);
+    let config = EngineConfig {
+        memtable_config: MemtableConfig {
+            size_threshold: 4096,
+            max_frozen_count: 3,
+            memtable_memory_limit: 256,
+        },
+        wal_config: WalConfig::default(),
+        flush_config: FlushConfig {
+            sst_config: flushdb_engine::sstable::types::SstConfig::default(),
+            max_frozen_count: 3,
+            flush_trigger_size: 4096,
+            flush_trigger_age: std::time::Duration::from_secs(3600),
+        },
+        compaction_config: CompactionConfig::default(),
+        manifest_config: ManifestConfig {
+            base_path: "flushdb".to_string(),
+            ..ManifestConfig::default()
+        },
+        cache_config: CacheConfig::default(),
+        namespace: "pressure-ns".to_string(),
+        local_dir: dir.path().to_path_buf(),
+    };
+
+    let mut engine = Engine::open(backend, config).await.unwrap();
+
+    let mut last_err = None;
+    for i in 0..200u32 {
+        let key = format!("key{:04}", i);
+        let value = vec![0u8; 64];
+        match engine
+            .put(b"rec1", key.as_bytes(), Bytes::from(value), Bytes::new(), None)
+            .await
+        {
+            Ok(_) => {}
+            Err(e) => {
+                last_err = Some(e);
+                break;
+            }
+        }
+    }
+
+    let err = last_err.expect("should have hit memory pressure");
+    match err {
+        flushdb_types::FlushError::ResourceExhausted { resource, .. } => {
+            assert_eq!(resource, "memtable_memory");
+        }
+        other => panic!("expected ResourceExhausted for memtable_memory, got: {:?}", other),
     }
 }

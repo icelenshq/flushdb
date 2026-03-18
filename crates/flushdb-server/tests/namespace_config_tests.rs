@@ -40,7 +40,7 @@ fn test_default_values() {
 #[test]
 fn test_s3_path_prefix_default() {
     let ns = NamespaceConfig::new("test-ns".to_string(), 4).expect("should succeed");
-    assert_eq!(ns.s3_path_prefix(), "flushdb/test-ns/");
+    assert_eq!(ns.s3_path_prefix(), "flushdb/test-ns");
 }
 
 // --- Validation Tests ---
@@ -344,7 +344,7 @@ fn test_engine_config_defaults() {
     assert_eq!(engine_cfg.namespace, "engine-test");
     assert_eq!(engine_cfg.local_dir, dir);
     assert_eq!(engine_cfg.memtable_config.size_threshold, 67_108_864);
-    assert_eq!(engine_cfg.manifest_config.base_path, "flushdb/engine-test/");
+    assert_eq!(engine_cfg.manifest_config.base_path, "flushdb/engine-test");
 
     // fp=0.01 -> ~10 bits per key
     let expected_bits = (-(0.01_f64).ln() / (2.0_f64.ln().powi(2))).ceil() as u32;

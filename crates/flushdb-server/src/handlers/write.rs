@@ -66,7 +66,7 @@ pub async fn handle_delete_items<B: StorageBackend + Clone + 'static>(
         ParsedPredicate::MatchAll => {
             service
                 .namespace_manager
-                .delete(&req.namespace, &req.id, &[])
+                .delete_range(&req.namespace, &req.id, b"", b"")
                 .await
                 .map_err(flush_error_to_status)?;
         }

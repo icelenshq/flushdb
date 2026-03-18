@@ -40,7 +40,7 @@ fn setup(
 #[tokio::test]
 async fn test_single_write_is_durable() {
     let (dir, buffer, _handle, _seg) = setup(WalConfig::default());
-    let notification = buffer.submit(make_entry()).unwrap();
+    let notification = buffer.submit(make_entry()).await.unwrap();
     let result = notification.await.unwrap();
     assert!(result.is_ok());
 
@@ -55,7 +55,7 @@ async fn test_multiple_writes_all_notified() {
     let (dir, buffer, _handle, _seg) = setup(WalConfig::default());
     let mut notifications = Vec::new();
     for _ in 0..10 {
-        notifications.push(buffer.submit(make_entry()).unwrap());
+        notifications.push(buffer.submit(make_entry()).await.unwrap());
     }
     for notif in notifications {
         let result = notif.await.unwrap();
@@ -80,7 +80,7 @@ async fn test_write_data_preserved() {
         item_metadata: Bytes::from_static(b"expired"),
         idempotency_token: IdempotencyToken::none(),
     };
-    let notif = buffer.submit(entry).unwrap();
+    let notif = buffer.submit(entry).await.unwrap();
     notif.await.unwrap().unwrap();
 
     let reader = WalReader::open(dir.path()).unwrap();
@@ -101,7 +101,7 @@ async fn test_timer_trigger_commits_batch() {
     };
     let (_dir, buffer, _handle, _seg) = setup(config);
 
-    let notif = buffer.submit(make_entry()).unwrap();
+    let notif = buffer.submit(make_entry()).await.unwrap();
     // Wait for timer to fire
     let result = tokio::time::timeout(std::time::Duration::from_secs(2), notif)
         .await
@@ -120,7 +120,7 @@ async fn test_concurrent_writers() {
         handles.push(tokio::spawn(async move {
             let mut notifications = Vec::new();
             for _ in 0..10 {
-                notifications.push(buf.submit(make_entry()).unwrap());
+                notifications.push(buf.submit(make_entry()).await.unwrap());
             }
             for notif in notifications {
                 notif.await.unwrap().unwrap();
@@ -147,7 +147,7 @@ async fn test_sequence_numbers_monotonic_across_batches() {
     for _ in 0..5 {
         let mut notifs = Vec::new();
         for _ in 0..5 {
-            notifs.push(buffer.submit(make_entry()).unwrap());
+            notifs.push(buffer.submit(make_entry()).await.unwrap());
         }
         for n in notifs {
             n.await.unwrap().unwrap();
@@ -179,7 +179,7 @@ async fn test_batch_sync_mode_deferred_fsync() {
     };
     let (_dir, buffer, _handle, _seg) = setup(config);
 
-    let notif = buffer.submit(make_entry()).unwrap();
+    let notif = buffer.submit(make_entry()).await.unwrap();
     // In batch sync mode, notification should fire quickly (before fsync)
     let result = tokio::time::timeout(std::time::Duration::from_secs(2), notif)
         .await
@@ -203,7 +203,7 @@ async fn test_submit_after_loop_exits_returns_error() {
     let (buffer, handle) = GroupCommitBuffer::new(writer, config, seg);
 
     // Confirm the loop is alive with a successful write
-    let notif = buffer.submit(make_entry()).unwrap();
+    let notif = buffer.submit(make_entry()).await.unwrap();
     notif.await.unwrap().unwrap();
 
     // Make the directory read-only so the next segment rotation fails
@@ -216,7 +216,7 @@ async fn test_submit_after_loop_exits_returns_error() {
     // rotation and exits, causing subsequent submits to fail.
     let mut got_submit_error = false;
     for _ in 0..200 {
-        match buffer.submit(make_entry()) {
+        match buffer.submit(make_entry()).await {
             Err(_) => {
                 got_submit_error = true;
                 break;
@@ -224,7 +224,7 @@ async fn test_submit_after_loop_exits_returns_error() {
             Ok(notif) => {
                 // The notification may carry the rotation I/O error.
                 // Once the loop exits, the receiver is dropped and future
-                // try_send calls will return Closed.
+                // send calls will return Closed.
                 let _ = notif.await;
                 tokio::task::yield_now().await;
             }
@@ -252,7 +252,7 @@ async fn test_shutdown_drains_pending_writes() {
 
     let mut notifications = Vec::new();
     for _ in 0..10 {
-        notifications.push(buffer.submit(make_entry()).unwrap());
+        notifications.push(buffer.submit(make_entry()).await.unwrap());
     }
 
     // Drop buffer to signal shutdown

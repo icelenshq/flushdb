@@ -41,7 +41,7 @@ impl<B: StorageBackend + Clone + 'static> Partition<B> {
         std::fs::create_dir_all(&partition_dir)?;
 
         let mut engine_config = config.engine_config(partition_dir.clone());
-        engine_config.namespace = format!("{}/partition-{:04}", namespace, partition_id);
+        engine_config.namespace = format!("partition-{:04}", partition_id);
         let engine = Engine::open(backend, engine_config).await?;
 
         Ok(Self {
@@ -160,6 +160,12 @@ impl<B: StorageBackend + Clone + 'static> Partition<B> {
     }
 
     // --- Maintenance Methods ---
+
+    pub async fn run_maintenance(&mut self) -> FlushResult<()> {
+        self.engine.run_maintenance().await?;
+        self.maybe_compact().await?;
+        Ok(())
+    }
 
     pub async fn maybe_flush(&mut self) -> FlushResult<Option<FlushResult_>> {
         self.engine.maybe_flush().await
