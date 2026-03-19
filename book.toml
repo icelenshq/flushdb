@@ -1,0 +1,15 @@
+[book]
+title = "flushdb"
+description = "A distributed key-value database using S3 as source of truth with LSM-tree architecture"
+authors = ["icelens"]
+language = "en"
+src = "docs"
+
+[build]
+build-dir = "book"
+
+[output.html]
+site-url = "https://flushdb.com/"
+cname = "flushdb.com"
+git-repository-url = "https://github.com/icelenshq/flushdb"
+edit-url-template = "https://github.com/icelenshq/flushdb/edit/main/{path}"
