@@ -10,6 +10,5 @@ build-dir = "book"
 
 [output.html]
 site-url = "https://flushdb.com/"
-cname = "flushdb.com"
 git-repository-url = "https://github.com/icelenshq/flushdb"
 edit-url-template = "https://github.com/icelenshq/flushdb/edit/main/{path}"
