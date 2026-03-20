@@ -4,41 +4,31 @@ The complete sequence from frozen memtable to durable S3 state.
 
 ## Flow
 
-```
-  Frozen Memtable                                 S3
-  (sorted entries)
-       │
-       │  iterate in                    ┌───────────────────────┐
-       │  sort order                    │                       │
-       ▼                                │                       │
-  ┌──────────┐                          │                       │
-  │ Block    │  4KB blocks              │   sstables/L0/        │
-  │ Builder  │──────────────────────────┼──►  {ulid}.sst        │
-  │          │  compress, CRC           │                       │
-  └──────────┘                          │                       │
-       │                                │                       │
-       ├── record_ids ──► Bloom Filter ─┤                       │
-       ├── first_keys ──► Index Block ──┤                       │
-       └── tokens ──────► Dedup Block ──┤                       │
-                                        │                       │
-                          Footer ───────┤                       │
-                                        │                       │
-                                        │   manifests/          │
-           CAS: v(N+1) ────────────────►│     v42.json (add L0) │
-           If-None-Match: *             │                       │
-                                        └───────────────────────┘
-       │
-       │  on CAS success
-       ▼
-  ┌──────────┐        ┌──────────────┐
-  │ Truncate │        │ Release      │
-  │ WAL segs │        │ frozen arena │
-  │ (delete) │        │ (O(1) drop)  │
-  └──────────┘        └──────────────┘
-       │
-       │  if L0 > 4 files
-       ▼
-  Schedule compaction
+```mermaid
+graph TD
+    FM["Frozen Memtable&#10;(sorted entries)"] -->|iterate in sort order| BB["Block Builder&#10;4KB blocks, compress, CRC"]
+
+    BB --> SST["sstables/L0/{ulid}.sst"]
+    BB -->|record_ids| BF["Bloom Filter"]
+    BB -->|first_keys| IDX["Index Block"]
+    BB -->|tokens| DDP["Dedup Block"]
+    BF & IDX & DDP --> SST
+    FTR["Footer"] --> SST
+
+    SST --> CAS["CAS: v(N+1)&#10;If-None-Match: *"]
+
+    subgraph Manifest["manifests/"]
+        MAN["v42.json (add L0)"]
+    end
+    CAS --> MAN
+
+    CAS -->|on success| Cleanup
+    subgraph Cleanup["Cleanup"]
+        TRUNC["Truncate WAL segments"]
+        REL["Release frozen arena&#10;(O(1) drop)"]
+    end
+
+    Cleanup -->|"if L0 > 4 files"| COMP["Schedule compaction"]
 ```
 
 ## Failure Modes

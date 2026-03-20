@@ -4,30 +4,14 @@ The WAL ensures durability for writes that haven't yet been flushed to S3.
 
 ## Lifecycle
 
-```
-  Client Write
-       │
-       ▼
-┌──────────────┐    200μs / 256KB    ┌─────────┐    confirmed    ┌─────────────┐
-│  WAL Buffer  │ ──────────────────► │ fsync() │ ─────────────► │ ACK Client  │
-│  (in-memory) │     group commit    └─────────┘                └─────────────┘
-└──────┬───────┘
-       │ appended to
-       ▼
-┌──────────────────────────────────────────────────────────────┐
-│                    WAL Segments (local disk)                   │
-│                                                                │
-│  segment-000000000001.wal   ← all generations flushed → DELETE │
-│  segment-000000000002.wal   ← memtable gen 4 still active     │
-│  segment-000000000003.wal   ← current append target            │
-└──────────────────────────────────────────────────────────────┘
-       │ on memtable flush
-       ▼
-┌──────────────┐    CAS manifest    ┌───────────────────┐
-│  SSTable on  │ ─────────────────► │ Segment safe to   │
-│  S3 (L0)     │    confirmed       │ delete (dirty map │
-└──────────────┘                    │ empty)            │
-                                    └───────────────────┘
+```mermaid
+graph TD
+    CW["Client Write"] --> WB["WAL Buffer (in-memory)"]
+    WB -->|"200μs / 256KB&#10;group commit"| FS["fsync()"]
+    FS -->|confirmed| ACK["ACK Client"]
+    WB -->|appended to| SEG["WAL Segments (local disk)&#10;segment-01: all flushed → DELETE&#10;segment-02: gen 4 active&#10;segment-03: current append"]
+    SEG -->|on memtable flush| SST["SSTable on S3 (L0)"]
+    SST -->|"CAS manifest confirmed"| SAFE["Segment safe to delete&#10;(dirty map empty)"]
 ```
 
 ## Segment Architecture
@@ -75,15 +59,9 @@ Each entry is length-prefixed and CRC-protected:
 
 Individual fsync per write is expensive. The WAL batches writes:
 
-```
-  Buffering (in-memory)          Commit              ACK
-┌───────────────────────┐   ┌──────────────┐   ┌────────────┐
-│ Write 1               │   │              │   │            │
-│ Write 2    → buffer   │──►│   fsync()    │──►│  ACK all   │
-│ Write 3               │   │              │   │  clients   │
-│ Write 4               │   │              │   │            │
-└───────────────────────┘   └──────────────┘   └────────────┘
- Trigger: 200μs or 256KB
+```mermaid
+graph LR
+    BUF["Buffering (in-memory)&#10;Write 1, 2, 3, 4 → buffer"] -->|"Trigger: 200μs&#10;or 256KB"| COMMIT["fsync()"] --> ACK["ACK all clients"]
 ```
 
 Writes are appended to a buffer and inserted into the memtable immediately but **not ACK'd** until the buffer is fsynced. Every 200μs or 256KB (whichever comes first), the batch is fsynced and all writes in it are ACK'd simultaneously. Under sustained load, hundreds of writes share a single fsync — **5-10x throughput improvement**.

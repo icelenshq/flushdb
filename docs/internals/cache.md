@@ -2,25 +2,17 @@
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                       DRAM Cache                         │
-│  ┌─────────────┐     ┌───────────────────────────────┐  │
-│  │ Window (1%) │     │          Main (99%)            │  │
-│  │ LRU, admits │────►│  Protected (80%) + Probation   │  │
-│  │ all new     │     │  Admitted only if freq >       │  │
-│  │ entries     │     │  eviction candidate's freq     │  │
-│  └─────────────┘     └───────────────────────────────┘  │
-│  Frequency Sketch (Count-Min Sketch, halved periodically)│
-└────────────────────────────┬────────────────────────────┘
-                             │ evict
-                    ┌────────▼─────────┐
-                    │   NVMe (<5ms)    │ same frequency check for admission
-                    └────────┬─────────┘
-                             │ miss
-                    ┌────────▼─────────┐
-                    │   S3 (50-200ms)  │ source of truth
-                    └──────────────────┘
+```mermaid
+graph TD
+    subgraph DRAM["DRAM Cache"]
+        Window["Window (1%)&#10;LRU, admits all new entries"]
+        Main["Main (99%)&#10;Protected (80%) + Probation&#10;Admitted only if freq >&#10;eviction candidate's freq"]
+        Sketch["Frequency Sketch&#10;(Count-Min Sketch, halved periodically)"]
+        Window -->|promote| Main
+    end
+
+    DRAM -->|evict| NVMe["NVMe (&lt;5ms)&#10;frequency check for admission"]
+    NVMe -->|miss| S3["S3 (50-200ms)&#10;source of truth"]
 ```
 
 **Cache key:** `(sstable_id, block_offset)` — one entry per 4 KB data block.

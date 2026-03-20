@@ -45,30 +45,29 @@ Compaction merges SSTables to reduce read amplification and reclaim tombstone sp
 
 ## Merge Process
 
-```
-  L0 → L1 compaction example:
+```mermaid
+graph TD
+    subgraph L0["L0 Input"]
+        A["A: keys a-m"]
+        B["B: keys d-z"]
+        C["C: keys a-f"]
+        D["D: keys k-p"]
+    end
 
-  L0:  [A: keys a-m] [B: keys d-z] [C: keys a-f] [D: keys k-p]
-                  │         │              │             │
-                  └─────────┴──────────────┴─────────────┘
-                                    │
-                            merge-sort by key
-                            dedup by sequence
-                            drop dead tombstones
-                                    │
-                                    ▼
-  L1:  [═══frag-0000═══][═══frag-0001═══][═══frag-0002═══]
-       keys a-h          keys i-p          keys q-z
-       (each ~1 GB, own bloom + index + footer)
-                                    │
-                                    ▼
-                          CAS manifest:
-                            remove [A,B,C,D] from L0
-                            add [frag-0000..0002] to L1
-                                    │
-                                    ▼
-                          Deferred DELETE of A,B,C,D from S3
-                          (after no active readers hold old manifest)
+    A & B & C & D --> Merge["Merge-sort by key&#10;Dedup by sequence&#10;Drop dead tombstones"]
+
+    Merge --> F0["frag-0000&#10;keys a-h"]
+    Merge --> F1["frag-0001&#10;keys i-p"]
+    Merge --> F2["frag-0002&#10;keys q-z"]
+
+    subgraph L1["L1 Output (each ~1 GB, own bloom + index + footer)"]
+        F0
+        F1
+        F2
+    end
+
+    L1 --> CAS["CAS manifest:&#10;remove A,B,C,D from L0&#10;add frag-0000..0002 to L1"]
+    CAS --> DEL["Deferred DELETE of A,B,C,D&#10;(after no active readers hold old manifest)"]
 ```
 
 ## SSTable Run Fragments
@@ -87,17 +86,12 @@ Max temporary space = `2 × fragment_size` instead of `2 × total_run_size`.
 
 ## Tombstone Lifecycle
 
-```
-Write: DeleteItems → WAL → Memtable → L0
-  │
-  ▼
-L1 compaction: Covered PUTs dropped. Tombstone survives — older PUTs may exist below.
-  │
-  ▼
-L2 compaction: Same.
-  │
-  ▼
-L3 (bottom level): Tombstone TTL checked. Expired (7d default + random 0-24h jitter) → dropped.
+```mermaid
+graph TD
+    W["Write: DeleteItems"] --> WAL --> Memtable --> L0
+    L0 -->|"L1 compaction"| L1["Covered PUTs dropped&#10;Tombstone survives —&#10;older PUTs may exist below"]
+    L1 -->|"L2 compaction"| L2["Same"]
+    L2 -->|"L3 (bottom level)"| L3["Tombstone TTL checked&#10;Expired (7d + random 0-24h jitter)&#10;→ dropped"]
 ```
 
 Range tombstones use a watermark protocol: only eligible for deletion when all levels below have been compacted past the tombstone's creation timestamp.

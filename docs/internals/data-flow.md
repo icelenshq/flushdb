@@ -2,46 +2,42 @@
 
 ## Write
 
-```
-Client PutItems(namespace, record_id, items, token)
-  │
-  ├─► Route to partition owner
-  ├─► Append WAL entry (buffered, fsync via group commit)
-  ├─► Insert into memtable (composite key sort order)
-  ├─► ACK to client with OrderedKey version
-  │
-  └─► Background:
-        ├─► Freeze memtable when full → flush to SSTable on S3
-        ├─► CAS manifest → truncate WAL → release memtable
-        └─► Compaction merges L0 → L1 → L2 → L3
+```mermaid
+graph TD
+    A["Client PutItems(namespace, record_id, items, token)"] --> B["Route to partition owner"]
+    B --> C["Append WAL entry&#10;(buffered, fsync via group commit)"]
+    C --> D["Insert into memtable&#10;(composite key sort order)"]
+    D --> E["ACK to client with OrderedKey version"]
+    D -.-> F["Background"]
+    F --> G["Freeze memtable when full&#10;→ flush to SSTable on S3"]
+    G --> H["CAS manifest → truncate WAL&#10;→ release memtable"]
+    H --> I["Compaction merges&#10;L0 → L1 → L2 → L3"]
 ```
 
 ## Read
 
-```
-Client GetItems(namespace, record_id, predicate, selection)
-  │
-  ├─► Route to partition owner
-  ├─► Merge-read across layers:
-  │     Active memtable
-  │     Frozen memtables
-  │     L0 SSTables (bloom check, parallel GETs)
-  │     L1-L3 SSTables (bloom check, at most 1 per level)
-  │
-  ├─► For each layer: seek to (record_id, start_key), scan forward
-  ├─► Merge-sort by item_key, apply tombstone filtering
-  ├─► Accumulate until byte budget exhausted
-  └─► Return items + page_token
+```mermaid
+graph TD
+    A["Client GetItems(namespace, record_id, predicate, selection)"] --> B["Route to partition owner"]
+    B --> C["Merge-read across layers"]
+    C --> C1["Active memtable"]
+    C --> C2["Frozen memtables"]
+    C --> C3["L0 SSTables&#10;(bloom check, parallel GETs)"]
+    C --> C4["L1-L3 SSTables&#10;(bloom check, ≤1 per level)"]
+    C1 & C2 & C3 & C4 --> D["Seek to record_id + start_key, scan forward"]
+    D --> E["Merge-sort by item_key&#10;Apply tombstone filtering"]
+    E --> F["Accumulate until byte budget exhausted"]
+    F --> G["Return items + page_token"]
 ```
 
 ## Recovery
 
-```
-Node startup:
-  1. Read latest manifest from S3 → restore SSTable level state
-  2. Replay WAL entries with sequence > last_flushed_sequence
-  3. Rebuild memtable + dedup set from replayed entries
-  4. Resume normal operation
+```mermaid
+graph TD
+    A["Node startup"] --> B["1. Read latest manifest from S3&#10;→ restore SSTable level state"]
+    B --> C["2. Replay WAL entries with&#10;sequence > last_flushed_sequence"]
+    C --> D["3. Rebuild memtable + dedup set&#10;from replayed entries"]
+    D --> E["4. Resume normal operation"]
 ```
 
 Zero data loss for ACK'd writes, assuming the WAL survived the crash.

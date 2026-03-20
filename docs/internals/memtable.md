@@ -4,29 +4,22 @@ The memtable buffers writes in-memory before they are flushed to SSTables on S3.
 
 ## Lifecycle
 
-```
-                    ┌────────────────────────────────────────────────────┐
-                    │              Read Path (checks all)                 │
-                    │     ┌──────────┐  ┌──────────┐  ┌──────────┐      │
-                    │     │  Active   │  │ Frozen 1 │  │ Frozen 2 │      │
-                    │     │ Memtable  │  │(flushing)│  │ (queued) │      │
-                    │     └────┬─────┘  └────┬─────┘  └────┬─────┘      │
-                    └──────────┼──────────────┼─────────────┼───────────┘
-                               │              │             │
-  Writes ──────────────────────►              │             │
-                                              │             │
-  When active ≥ 64 MB or 5 min:              │             │
-    active becomes frozen ─────────────────────►            │
-    new empty becomes active                                │
-                                                            │
-  Flush (background):                                       │
-    iterate frozen in sort order ──────────────────────────►│
-    build SSTable ──────────────────────────────────────────┤
-    upload to S3 ──────────────────────────────────────────►│
-    CAS manifest ──────────────────────────────────────────►│
-    release frozen (drop arena) ◄───────────────────────────┘
+```mermaid
+graph TD
+    subgraph ReadPath["Read Path (checks all)"]
+        Active["Active Memtable"]
+        F1["Frozen 1 (flushing)"]
+        F2["Frozen 2 (queued)"]
+    end
 
-  Backpressure: 3 frozen memtables → writes rejected (RESOURCE_EXHAUSTED)
+    Writes["Writes"] --> Active
+    Active -->|"≥ 64 MB or 5 min"| F1
+    F1 --> Build["Iterate frozen in sort order&#10;→ build SSTable"]
+    Build --> Upload["Upload to S3"]
+    Upload --> CAS["CAS manifest"]
+    CAS --> Release["Release frozen arena&#10;(O(1) drop)"]
+
+    BP["⚠ Backpressure: 3 frozen memtables&#10;→ writes rejected RESOURCE_EXHAUSTED"]
 ```
 
 ## Skip List

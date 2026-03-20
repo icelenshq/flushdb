@@ -4,36 +4,18 @@ The manifest defines which SSTables are live at each level. It is the **commit p
 
 ## Role in the System
 
-```
-                  ┌──────────────────────────────────────────┐
-                  │              S3 Bucket                     │
-                  │                                            │
-                  │   manifests/                                │
-                  │     v41.json  ←── previous                 │
-                  │     v42.json  ←── CURRENT (highest ID)     │
-                  │       │                                    │
-                  │       │  defines what's live:              │
-                  │       │                                    │
-                  │       ├─► L0: [sst-E]                      │
-                  │       ├─► L1: [run-FG/frag-0, frag-1]     │
-                  │       ├─► L2: []                           │
-                  │       ├─► L3: []                           │
-                  │       │                                    │
-                  │       ├─► writer_epoch: 7                  │
-                  │       ├─► compactor_epoch: 3               │
-                  │       └─► last_flushed_sequence: 458923    │
-                  │                                            │
-                  │   sstables/                                 │
-                  │     L0/sst-E.sst        ← referenced       │
-                  │     L1/run-FG/frag-*.sst ← referenced      │
-                  │     L0/sst-OLD.sst       ← NOT referenced  │
-                  │                            (GC candidate)   │
-                  └──────────────────────────────────────────┘
+```mermaid
+graph TD
+    V42["v42.json (CURRENT)&#10;writer_epoch: 7 · compactor_epoch: 3&#10;last_flushed_sequence: 458923"]
 
-  On startup:  read manifest → know exactly which SSTables to use
-  On flush:    CAS manifest → add new SSTable to L0
-  On compact:  CAS manifest → remove inputs, add outputs
-  On recovery: replay WAL entries > last_flushed_sequence
+    V42 -->|L0| SstE["sst-E.sst ✓"]
+    V42 -->|L1| RunFG["run-FG/frag-0, frag-1 ✓"]
+    OLD["sst-OLD.sst ✗&#10;(GC candidate)"]
+
+    Startup["On startup"] -.->|read manifest| V42
+    Flush["On flush"] -.->|"CAS: add L0 SSTable"| V42
+    Compact["On compact"] -.->|"CAS: remove inputs, add outputs"| V42
+    Recovery["On recovery"] -.->|"replay WAL > last_flushed_seq"| V42
 ```
 
 ## Structure
@@ -65,38 +47,40 @@ The manifest defines which SSTables are live at each level. It is the **commit p
 
 Every flush, compaction, and GC operation updates the manifest atomically:
 
-```
-1. Read current manifest (ID = N)
-2. Validate epoch (zombie check)
-3. Compute new manifest (N+1)
-4. PUT to S3 with If-None-Match: *
-5. SUCCESS → done
-   412 PreconditionFailed → re-read, recompute, retry
+```mermaid
+graph TD
+    A["1. Read current manifest (ID = N)"] --> B["2. Validate epoch (zombie check)"]
+    B --> C["3. Compute new manifest (N+1)"]
+    C --> D["4. PUT to S3 with If-None-Match: *"]
+    D -->|"200 OK"| E["SUCCESS ✓"]
+    D -->|"412 PreconditionFailed"| F["Re-read, recompute, retry"] --> A
 ```
 
 S3 conditional writes reject a PUT if the key already exists. No external coordination needed.
 
 ## Concurrent Flush + Compaction
 
-```
-Time ─────────────────────────────────────────────────►
+```mermaid
+sequenceDiagram
+    participant F as Flusher
+    participant S3 as S3 Manifests
+    participant C as Compactor
 
-Flusher                          Compactor
-   │                                │
-   │  Read manifest v5              │  Read manifest v5
-   │  L0: [A,B,C,D]                │  L0: [A,B,C,D]
-   │                                │
-   │  Build & upload SSTable E      │  Merge [A,B,C,D] → L1 [F,G]
-   │                                │
-   │  CAS: v6 (add E to L0)        │
-   │  → SUCCESS                     │
-   │                                │
-   │                                │  CAS: v7 (expected prev=v5)
-   │                                │  → FAIL (412)
-   │                                │
-   │                                │  Re-read v6. Inputs [A,B,C,D] still valid.
-   │                                │  Recompute, CAS: v7 → SUCCESS
-   │                                │  L0=[E], L1=[F,G]
+    F->>S3: Read manifest v5 (L0: A,B,C,D)
+    C->>S3: Read manifest v5 (L0: A,B,C,D)
+
+    Note over F: Build & upload SSTable E
+    Note over C: Merge [A,B,C,D] → L1 [F,G]
+
+    F->>S3: CAS v6 (add E to L0)
+    S3-->>F: SUCCESS ✓
+
+    C->>S3: CAS v7 (expected prev=v5)
+    S3-->>C: FAIL 412 ✗
+
+    C->>S3: Re-read v6, inputs still valid
+    C->>S3: CAS v7 → SUCCESS
+    Note over S3: L0=[E], L1=[F,G]
 ```
 
 ## Epoch-Based Fencing
@@ -105,16 +89,20 @@ Flusher                          Compactor
 
 **Solution:** Each manifest carries `writer_epoch` and `compactor_epoch`. On lease acquisition, the new owner bumps the epoch. The old node's writes are rejected:
 
-```
-Node A (epoch=5)                  Node B
-   │                                │
-   │  Begins flush...               │
-   │  ── Lease expires ──           │
-   │                                │  Takes lease, CAS manifest: epoch=6
-   │                                │  Begins serving.
-   │  Flush done.                   │
-   │  Read manifest... epoch=6      │
-   │  6 > 5 → ZOMBIE. HALT.        │
+```mermaid
+sequenceDiagram
+    participant A as Node A (epoch=5)
+    participant S3
+    participant B as Node B
+
+    A->>A: Begins flush...
+    Note over A: Lease expires
+
+    B->>S3: Takes lease, CAS manifest: epoch=6
+    B->>B: Begins serving
+
+    A->>S3: Flush done. Read manifest...
+    Note over A: epoch=6 > 5 → ZOMBIE. HALT.
 ```
 
 ## Snapshots and Pruning

@@ -8,56 +8,28 @@ S3 offers 11 nines of durability, scales without sharding, and costs a fraction 
 
 ## System Overview
 
-```
-                         ┌─────────────────────────┐
-                         │       gRPC Client        │
-                         └────────────┬─────────────┘
-                                      │
-                         ┌────────────▼─────────────┐
-                         │   flushdb-server (tonic)  │
-                         │                           │
-                         │  ┌─────────────────────┐  │
-                         │  │  Namespace Manager   │  │
-                         │  │  ┌───┐ ┌───┐ ┌───┐  │  │
-                         │  │  │P0 │ │P1 │ │P2 │  │  │
-                         │  │  └─┬─┘ └─┬─┘ └─┬─┘  │  │
-                         │  └────┼─────┼─────┼────┘  │
-                         └───────┼─────┼─────┼───────┘
-                                 │     │     │
-                    ┌────────────▼─────▼─────▼────────────┐
-                    │         Engine (per partition)        │
-                    │                                      │
-  Write Path:       │  ┌─────┐    ┌───────────┐           │
-  ───────────────►  │  │ WAL │───►│ Memtable  │           │
-                    │  └─────┘    │ (SkipList) │           │
-                    │             └─────┬──────┘           │
-                    │                   │ freeze           │
-                    │             ┌─────▼──────┐           │
-                    │             │   Frozen    │           │
-                    │             │  Memtables  │           │
-                    │             └─────┬──────┘           │
-                    │                   │ flush            │
-                    │  ┌────────────────▼───────────────┐  │
-                    │  │          SSTable Levels         │  │
-  Read Path:        │  │  L0: recent flushes (≤4 files) │  │
-  ◄──────────────── │  │  L1: ≤256 MB                   │  │
-  (merge across     │  │  L2: ≤2.56 GB                  │  │
-   all layers)      │  │  L3: ≤25.6 GB                  │  │
-                    │  └────────────────┬───────────────┘  │
-                    │                   │                   │
-                    │  ┌────────────────▼───────────────┐  │
-                    │  │    Three-Tier Cache             │  │
-                    │  │  DRAM → NVMe → S3              │  │
-                    │  └────────────────────────────────┘  │
-                    └──────────────────┬───────────────────┘
-                                       │
-                          ┌────────────▼────────────┐
-                          │     S3 (Source of Truth) │
-                          │                          │
-                          │  manifests/              │
-                          │  sstables/               │
-                          │  snapshots/              │
-                          └──────────────────────────┘
+```mermaid
+graph TD
+    Client["gRPC Client"] --> Server
+
+    subgraph Server["flushdb-server (tonic)"]
+        direction TB
+        NM["Namespace Manager"]
+        Partitions["P0 · P1 · P2"]
+        NM --> Partitions
+    end
+
+    Partitions --> Engine
+
+    subgraph Engine["Engine (per partition)"]
+        direction TB
+        WAL --> MT["Memtable (SkipList)"]
+        MT -->|freeze| FMT["Frozen Memtables"]
+        FMT -->|flush| SST["SSTable Levels&#10;L0: ≤4 files · L1: ≤256 MB&#10;L2: ≤2.56 GB · L3: ≤25.6 GB"]
+        SST --> Cache["Three-Tier Cache&#10;DRAM → NVMe → S3"]
+    end
+
+    Cache --> S3["S3 (Source of Truth)&#10;manifests/ · sstables/ · snapshots/"]
 ```
 
 Each namespace has its own set of partitions. Each partition has its own engine instance. The engine owns a WAL, a memtable, SSTable levels, and a cache — no shared mutable state between partitions.
@@ -107,8 +79,9 @@ Every write also carries a 24-byte **idempotency token** (8-byte client ID + 16-
 
 Reads merge results across all layers, newest to oldest:
 
-```
-Active memtable → Frozen memtables → L0 → L1 → L2 → L3
+```mermaid
+graph LR
+    AM["Active Memtable"] --> FM["Frozen Memtables"] --> L0 --> L1 --> L2 --> L3
 ```
 
 For each SSTable, a **bloom filter** check on the record ID eliminates files that definitely don't contain the key. Bloom filters are built over record IDs (not full composite keys), so a single check covers all items in a record. Data blocks are fetched through the three-tier cache.
