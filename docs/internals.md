@@ -30,6 +30,34 @@ The first `0x00` in the key unambiguously marks the boundary between record ID a
 
 The WAL ensures durability for writes that haven't yet been flushed to S3.
 
+### Lifecycle
+
+```
+  Client Write
+       │
+       ▼
+┌──────────────┐    200μs / 256KB    ┌─────────┐    confirmed    ┌─────────────┐
+│  WAL Buffer  │ ──────────────────► │ fsync() │ ─────────────► │ ACK Client  │
+│  (in-memory) │     group commit    └─────────┘                └─────────────┘
+└──────┬───────┘
+       │ appended to
+       ▼
+┌──────────────────────────────────────────────────────────────┐
+│                    WAL Segments (local disk)                   │
+│                                                                │
+│  segment-000000000001.wal   ← all generations flushed → DELETE │
+│  segment-000000000002.wal   ← memtable gen 4 still active     │
+│  segment-000000000003.wal   ← current append target            │
+└──────────────────────────────────────────────────────────────┘
+       │ on memtable flush
+       ▼
+┌──────────────┐    CAS manifest    ┌───────────────────┐
+│  SSTable on  │ ─────────────────► │ Segment safe to   │
+│  S3 (L0)     │    confirmed       │ delete (dirty map │
+└──────────────┘                    │ empty)            │
+                                    └───────────────────┘
+```
+
 ### Segment Architecture
 
 The WAL is a sequence of fixed-size **segments** (default 32 MB) on local disk.
@@ -118,6 +146,33 @@ When generation G is flushed: remove G from all segments' dirty maps. If a segme
 ## 3. Memtable
 
 The memtable buffers writes in-memory before they are flushed to SSTables on S3.
+
+### Lifecycle
+
+```
+                    ┌────────────────────────────────────────────────────┐
+                    │              Read Path (checks all)                 │
+                    │     ┌──────────┐  ┌──────────┐  ┌──────────┐      │
+                    │     │  Active   │  │ Frozen 1 │  │ Frozen 2 │      │
+                    │     │ Memtable  │  │(flushing)│  │ (queued) │      │
+                    │     └────┬─────┘  └────┬─────┘  └────┬─────┘      │
+                    └──────────┼──────────────┼─────────────┼───────────┘
+                               │              │             │
+  Writes ──────────────────────►              │             │
+                                              │             │
+  When active ≥ 64 MB or 5 min:              │             │
+    active becomes frozen ─────────────────────►            │
+    new empty becomes active                                │
+                                                            │
+  Flush (background):                                       │
+    iterate frozen in sort order ──────────────────────────►│
+    build SSTable ──────────────────────────────────────────┤
+    upload to S3 ──────────────────────────────────────────►│
+    CAS manifest ──────────────────────────────────────────►│
+    release frozen (drop arena) ◄───────────────────────────┘
+
+  Backpressure: 3 frozen memtables → writes rejected (RESOURCE_EXHAUSTED)
+```
 
 ### Skip List
 
@@ -288,16 +343,31 @@ Fixed 80 bytes at the end of every SSTable:
 
 ### S3 Access Pattern
 
-A cold read (nothing cached) requires up to 4 byte-range GETs:
+A cold read (nothing cached) walks the SSTable from the tail:
 
 ```
-Step 1: GET bytes=-80               → Footer (find offsets)
-Step 2: GET bytes={bloom_range}     → Bloom filter (check record_id)
-Step 3: GET bytes={index_range}     → Index block (binary search for block)
-Step 4: GET bytes={block_range}     → Data block (decompress, scan for key)
-```
+              SSTable on S3
+┌──────────────────────────────────────┐
+│ Data Block 0    ◄────────────────────┼──── Step 4: GET data block
+│ Data Block 1                         │     decompress, scan for key
+│ ...                                  │
+│ Data Block N                         │
+├──────────────────────────────────────┤
+│ Dedup Block                          │
+├──────────────────────────────────────┤
+│ Bloom Filter    ◄────────────────────┼──── Step 2: GET bloom filter
+│                                      │     check if record_id present
+├──────────────────────────────────────┤     if negative → skip SSTable
+│ Index Block     ◄────────────────────┼──── Step 3: GET index block
+│                                      │     binary search → block offset
+├──────────────────────────────────────┤
+│ Footer (80B)    ◄────────────────────┼──── Step 1: GET bytes=-80
+│                                      │     find section offsets
+└──────────────────────────────────────┘
 
-For small SSTables, footer + bloom + index are contiguous — a single ~200 KB GET fetches all metadata.
+Small SSTables: footer + bloom + index contiguous → single ~200 KB GET
+Hot SSTables: bloom + index pinned in DRAM → skip to step 4
+```
 
 ### Upload Strategy
 
@@ -313,6 +383,40 @@ Peak memory: O(32 MB) regardless of SSTable size. Incomplete uploads cleaned up 
 ## 5. Manifest
 
 The manifest defines which SSTables are live at each level. It is the **commit point** for all state changes.
+
+### Role in the System
+
+```
+                  ┌──────────────────────────────────────────┐
+                  │              S3 Bucket                     │
+                  │                                            │
+                  │   manifests/                                │
+                  │     v41.json  ←── previous                 │
+                  │     v42.json  ←── CURRENT (highest ID)     │
+                  │       │                                    │
+                  │       │  defines what's live:              │
+                  │       │                                    │
+                  │       ├─► L0: [sst-E]                      │
+                  │       ├─► L1: [run-FG/frag-0, frag-1]     │
+                  │       ├─► L2: []                           │
+                  │       ├─► L3: []                           │
+                  │       │                                    │
+                  │       ├─► writer_epoch: 7                  │
+                  │       ├─► compactor_epoch: 3               │
+                  │       └─► last_flushed_sequence: 458923    │
+                  │                                            │
+                  │   sstables/                                 │
+                  │     L0/sst-E.sst        ← referenced       │
+                  │     L1/run-FG/frag-*.sst ← referenced      │
+                  │     L0/sst-OLD.sst       ← NOT referenced  │
+                  │                            (GC candidate)   │
+                  └──────────────────────────────────────────┘
+
+  On startup:  read manifest → know exactly which SSTables to use
+  On flush:    CAS manifest → add new SSTable to L0
+  On compact:  CAS manifest → remove inputs, add outputs
+  On recovery: replay WAL entries > last_flushed_sequence
+```
 
 ### Structure
 
@@ -408,14 +512,40 @@ A **pointer file** (`manifest.json`) provides fast lookup of the current manifes
 The complete sequence from frozen memtable to durable S3 state:
 
 ```
-1. TRIGGER      memtable ≥ 64 MB or 5 minutes elapsed
-2. FREEZE       Pointer swap: active → frozen, new empty → active
-3. BUILD        Iterate frozen memtable in sorted order → SSTable (blocks, bloom, index, footer)
-4. UPLOAD       PutObject or streaming multipart to S3 L0 path
-5. MANIFEST     CAS: add SSTable to L0, set last_flushed_sequence, validate epoch
-6. WAL CLEANUP  Delete segments with empty dirty maps
-7. RELEASE      Drop frozen memtable arena
-8. COMPACT?     If L0 > 4 files, schedule L0 → L1 compaction
+  Frozen Memtable                                 S3
+  (sorted entries)
+       │
+       │  iterate in                    ┌───────────────────────┐
+       │  sort order                    │                       │
+       ▼                                │                       │
+  ┌──────────┐                          │                       │
+  │ Block    │  4KB blocks              │   sstables/L0/        │
+  │ Builder  │──────────────────────────┼──►  {ulid}.sst        │
+  │          │  compress, CRC           │                       │
+  └──────────┘                          │                       │
+       │                                │                       │
+       ├── record_ids ──► Bloom Filter ─┤                       │
+       ├── first_keys ──► Index Block ──┤                       │
+       └── tokens ──────► Dedup Block ──┤                       │
+                                        │                       │
+                          Footer ───────┤                       │
+                                        │                       │
+                                        │   manifests/          │
+           CAS: v(N+1) ────────────────►│     v42.json (add L0) │
+           If-None-Match: *             │                       │
+                                        └───────────────────────┘
+       │
+       │  on CAS success
+       ▼
+  ┌──────────┐        ┌──────────────┐
+  │ Truncate │        │ Release      │
+  │ WAL segs │        │ frozen arena │
+  │ (delete) │        │ (O(1) drop)  │
+  └──────────┘        └──────────────┘
+       │
+       │  if L0 > 4 files
+       ▼
+  Schedule compaction
 ```
 
 ### Failure Modes
@@ -434,6 +564,30 @@ The complete sequence from frozen memtable to durable S3 state:
 ## 7. Compaction
 
 Compaction merges SSTables to reduce read amplification and reclaim tombstone space.
+
+### Level Structure
+
+```
+                  Read amplification
+                  (max SSTables checked per point read)
+                        │
+  L0   [A] [B] [C] [D] │ 4   ← may overlap, all checked
+       ────────────────►│     ← flush lands here
+           4 files max  │
+                        │
+  L1   [═══F═══][═══G═══] 1   ← non-overlapping, binary search
+           256 MB max   │
+                        │
+  L2   [════H════][════I════][════J════]  1  ← non-overlapping
+            2.56 GB max │
+                        │
+  L3   [═══════K═══════][═══════L═══════] 1  ← non-overlapping, tombstone GC
+            25.6 GB max │
+                        │
+       ─────────────────┘
+       Total: at most 4 + 1 + 1 + 1 = 7 SSTables per point read
+       (bloom filters eliminate most of these)
+```
 
 ### Leveled Strategy (10x size ratio)
 
@@ -455,21 +609,29 @@ Compaction merges SSTables to reduce read amplification and reclaim tombstone sp
 ### Merge Process
 
 ```
-1. Open iterators on all input SSTables
-   Index blocks + bloom filters loaded into DRAM
+  L0 → L1 compaction example:
 
-2. Merge-sort by composite key:
-   - Duplicate keys → keep highest sequence_number
-   - Tombstones at bottom level with expired TTL → drop both
-   - Range tombstones → propagate if they still cover lower-level keys
-
-3. Build output fragments (~1 GB each for L1+)
-   Each fragment: own bloom filter, index, footer
-   Upload each fragment as completed
-
-4. CAS manifest: add outputs, remove inputs, validate compactor_epoch
-
-5. Deferred deletion of old SSTables via reference tracking
+  L0:  [A: keys a-m] [B: keys d-z] [C: keys a-f] [D: keys k-p]
+                  │         │              │             │
+                  └─────────┴──────────────┴─────────────┘
+                                    │
+                            merge-sort by key
+                            dedup by sequence
+                            drop dead tombstones
+                                    │
+                                    ▼
+  L1:  [═══frag-0000═══][═══frag-0001═══][═══frag-0002═══]
+       keys a-h          keys i-p          keys q-z
+       (each ~1 GB, own bloom + index + footer)
+                                    │
+                                    ▼
+                          CAS manifest:
+                            remove [A,B,C,D] from L0
+                            add [frag-0000..0002] to L1
+                                    │
+                                    ▼
+                          Deferred DELETE of A,B,C,D from S3
+                          (after no active readers hold old manifest)
 ```
 
 ### SSTable Run Fragments
@@ -555,6 +717,29 @@ With:     GET 4096-16383                                    (1 request)
 
 ## 9. S3 Integration
 
+S3 serves three roles: durable storage for data (SSTables, blobs), coordination layer (manifests, leases), and garbage collection target.
+
+```
+                          ┌───────────────────────────────────────┐
+                          │                  S3                    │
+  ┌───────────┐           │                                       │
+  │  Engine   │──write────┼──► sstables/  (immutable data files)  │
+  │           │           │                                       │
+  │  Flusher  │──CAS──────┼──► manifests/ (conditional writes)    │
+  │           │           │      If-None-Match: * → 200 or 412    │
+  │  Reader   │──GET range┼──◄ sstables/  (byte-range reads)      │
+  │           │           │                                       │
+  │  Compactor│──CAS──────┼──► manifests/ (conditional writes)    │
+  │           │──write────┼──► sstables/  (new compacted files)   │
+  │           │──delete───┼──► sstables/  (old files, deferred)   │
+  │           │           │                                       │
+  │  Lease Mgr│──CAS──────┼──► leases/   (ownership, 30s TTL)    │
+  │           │           │                                       │
+  │  GC       │──list─────┼──► *         (orphan detection)       │
+  │           │──delete───┼──► *         (cleanup)                │
+  └───────────┘           └───────────────────────────────────────┘
+```
+
 ### Object Layout
 
 ```
@@ -578,9 +763,28 @@ S3 `If-None-Match: *` (available since August 2024) is the coordination primitiv
 
 ### Distributed Leases
 
-Partition ownership via versioned S3 lease keys. Highest lexicographic version = current lease. 30-second TTL, 10-second renewal interval (three chances before expiry).
+Partition ownership via versioned S3 lease keys:
 
-Acquisition: list lease keys → PUT next version with `If-None-Match: *` → on 412, re-list and retry.
+```
+  leases/partition-0/
+    lease-00000000000000000001.json  ← expired (Node A, old)
+    lease-00000000000000000002.json  ← expired (Node A, renewed)
+    lease-00000000000000000003.json  ← CURRENT (Node B, took over)
+                                       {owner: B, epoch: 6, expires: T+30s}
+
+  Acquisition:
+    Node C ──► ListObjects(leases/partition-0/)
+           ──► Sees lease-03 expired
+           ──► PUT lease-04 with If-None-Match: *
+           ──► 200 OK → Node C owns partition 0
+                412 → someone else won, re-list and retry
+
+  Renewal (every 10s):
+    Node C ──► PUT lease-05 with If-None-Match: *
+           ──► Delete lease-01, lease-02 (old)
+```
+
+30-second TTL, 10-second renewal interval (three chances before expiry).
 
 ### Large Value Handling
 
