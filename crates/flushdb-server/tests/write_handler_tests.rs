@@ -477,3 +477,113 @@ async fn test_put_items_bypass_dedup() {
         "second write should overwrite the first"
     );
 }
+
+fn make_proto_token(gen_time: u64, nonce_byte: u8) -> proto::IdempotencyToken {
+    let mut token_bytes = vec![0u8; 16];
+    token_bytes[0] = nonce_byte;
+    proto::IdempotencyToken {
+        generation_time: gen_time,
+        token: token_bytes,
+    }
+}
+
+#[tokio::test]
+async fn test_put_items_batch_with_token_persists_all_items() {
+    let (service, _dir) = setup_service().await;
+
+    let req = proto::PutItemsRequest {
+        namespace: "test-ns".to_string(),
+        id: "record-1".to_string(),
+        items: vec![
+            make_item(b"key-a", b"val-a", b""),
+            make_item(b"key-b", b"val-b", b""),
+            make_item(b"key-c", b"val-c", b""),
+        ],
+        idempotency_token: Some(make_proto_token(1000, 0x42)),
+    };
+
+    service
+        .put_items(Request::new(req))
+        .await
+        .expect("batch put should succeed");
+
+    // ALL three items must be persisted
+    for (key, expected_val) in [(b"key-a".as_slice(), b"val-a".as_slice()), (b"key-b", b"val-b"), (b"key-c", b"val-c")] {
+        let result = service
+            .namespace_manager
+            .get("test-ns", "record-1", key)
+            .await
+            .expect("get should succeed")
+            .expect("item should exist");
+        assert_eq!(result.value.as_ref(), expected_val, "item {:?} mismatch", key);
+    }
+}
+
+#[tokio::test]
+async fn test_put_items_batch_retry_is_idempotent() {
+    let (service, _dir) = setup_service().await;
+
+    let make_req = || proto::PutItemsRequest {
+        namespace: "test-ns".to_string(),
+        id: "record-1".to_string(),
+        items: vec![
+            make_item(b"key-a", b"val-a", b""),
+            make_item(b"key-b", b"val-b", b""),
+        ],
+        idempotency_token: Some(make_proto_token(2000, 0x99)),
+    };
+
+    // First write
+    service
+        .put_items(Request::new(make_req()))
+        .await
+        .expect("first batch put");
+
+    // Retry with same token — should succeed (idempotent)
+    service
+        .put_items(Request::new(make_req()))
+        .await
+        .expect("retry should succeed as idempotent");
+
+    // Items should still have original values
+    for (key, expected_val) in [(b"key-a".as_slice(), b"val-a".as_slice()), (b"key-b", b"val-b")] {
+        let result = service
+            .namespace_manager
+            .get("test-ns", "record-1", key)
+            .await
+            .expect("get should succeed")
+            .expect("item should exist");
+        assert_eq!(result.value.as_ref(), expected_val);
+    }
+}
+
+#[tokio::test]
+async fn test_put_items_single_item_with_token_backward_compat() {
+    let (service, _dir) = setup_service().await;
+
+    let req = proto::PutItemsRequest {
+        namespace: "test-ns".to_string(),
+        id: "record-1".to_string(),
+        items: vec![make_item(b"key-1", b"val-1", b"")],
+        idempotency_token: Some(make_proto_token(3000, 0x01)),
+    };
+
+    service
+        .put_items(Request::new(req.clone()))
+        .await
+        .expect("first put");
+
+    // Retry — should succeed silently
+    service
+        .put_items(Request::new(req))
+        .await
+        .expect("idempotent retry should succeed");
+
+    let result = service
+        .namespace_manager
+        .get("test-ns", "record-1", b"key-1")
+        .await
+        .expect("get should succeed")
+        .expect("item should exist");
+    assert_eq!(result.value.as_ref(), b"val-1");
+}

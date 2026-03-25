@@ -7,7 +7,7 @@ use flushdb_engine::{
     CacheConfig, DirectBlockFetcher, Engine, EngineConfig, FlushConfig, ManifestConfig,
 };
 use flushdb_types::{
-    CompositeKey, EntryType, IdempotencyToken, LocalFsBackend, MemtableEntry,
+    CompositeKey, EntryType, FlushError, IdempotencyToken, LocalFsBackend, MemtableEntry,
 };
 use flushdb_wal::{WalConfig, WalEntry, WalManager};
 
@@ -242,4 +242,78 @@ async fn test_recover_skips_entries_at_or_below_last_flushed_sequence() {
             "pre-flush entry key{i:02} (seq < last_flushed) should not be in memtable"
         );
     }
+}
+
+fn make_wal_entry_with_token(
+    namespace: &[u8],
+    record_id: &[u8],
+    key: &[u8],
+    value: &[u8],
+    seq: u64,
+    token: IdempotencyToken,
+) -> WalEntry {
+    let composite_key = CompositeKey::new(record_id, key).unwrap();
+    let entry = MemtableEntry::with_sequence(
+        composite_key,
+        Bytes::copy_from_slice(value),
+        Bytes::new(),
+        token,
+        seq,
+        EntryType::Put,
+    );
+    WalEntry::from_memtable_entry(&entry, namespace)
+}
+
+#[tokio::test]
+async fn test_recover_tolerates_duplicate_tokens_in_wal() {
+    let (dir, backend) = setup();
+    let wal_dir = dir.path().join("wal");
+    std::fs::create_dir_all(&wal_dir).unwrap();
+
+    let token = IdempotencyToken::from_parts(1000, {
+        let mut buf = [0u8; 16];
+        buf[0] = 0xAB;
+        buf
+    });
+
+    let mut wal = WalManager::open(&wal_dir, WalConfig::default()).unwrap();
+    // Write two WAL entries with the SAME idempotency token (simulates pre-fix WAL)
+    wal.append(
+        make_wal_entry_with_token(b"test-ns", b"rec1", b"key1", b"val1", 1, token),
+        0,
+    )
+    .await
+    .unwrap();
+    wal.append(
+        make_wal_entry_with_token(b"test-ns", b"rec1", b"key2", b"val2", 2, token),
+        0,
+    )
+    .await
+    .unwrap();
+    drop(wal);
+
+    let fetcher = DirectBlockFetcher::new(backend.clone());
+    let config = RecoveryConfig {
+        manifest_config: ManifestConfig::default(),
+        memtable_config: MemtableConfig::default(),
+    };
+
+    // Recovery should succeed (not panic or return error)
+    let result = recover(backend, &wal_dir, "test-ns", &config, &fetcher)
+        .await
+        .unwrap();
+
+    // Only the first entry should have been replayed, second skipped
+    assert_eq!(result.wal_entries_replayed, 1);
+
+    // But next_sequence must account for the skipped entry
+    assert_eq!(result.next_sequence_number, 3);
+
+    // The first entry's data should be present
+    let key1 = CompositeKey::new(b"rec1", b"key1").unwrap();
+    assert!(result.memtable_list.get(&key1).is_some());
+
+    // The second entry (duplicate token) should NOT be in the memtable
+    let key2 = CompositeKey::new(b"rec1", b"key2").unwrap();
+    assert!(result.memtable_list.get(&key2).is_none());
 }

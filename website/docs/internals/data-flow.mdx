@@ -1,0 +1,22 @@
+---
+sidebar_position: 10
+title: End-to-End Data Flow
+---
+
+import ExcalidrawDiagram from '@site/src/components/ExcalidrawDiagram';
+
+# End-to-End Data Flow
+
+## Write
+
+<ExcalidrawDiagram file="/diagrams/flow-write.excalidraw" height={400} />
+
+## Read
+
+<ExcalidrawDiagram file="/diagrams/flow-read.excalidraw" height={400} />
+
+## Recovery
+
+<ExcalidrawDiagram file="/diagrams/flow-recovery.excalidraw" height={250} />
+
+Zero data loss for ACK'd writes, assuming the WAL survived the crash.

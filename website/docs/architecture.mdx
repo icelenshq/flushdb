@@ -1,0 +1,139 @@
+---
+sidebar_position: 2
+title: Architecture
+---
+
+import ExcalidrawDiagram from '@site/src/components/ExcalidrawDiagram';
+
+# Architecture
+
+## Why S3?
+
+Most databases treat object storage as a backup tier. flushdb inverts this — **S3 is the primary store**. Compute nodes are stateless caches that can be replaced without data loss.
+
+S3 offers 11 nines of durability, scales without sharding, and costs a fraction of provisioned SSDs. The tradeoff is latency (~50ms per request), which the three-tier cache mitigates for hot data. There is no replication protocol for data — durability comes from S3, not from copying data across nodes. The coordination layer exists only to protect the **unflushed window**: the gap between when a write is ACK'd and when it reaches S3.
+
+## System Overview
+
+<ExcalidrawDiagram file="/diagrams/architecture-overview.excalidraw" height={700} />
+
+Each namespace has its own set of partitions. Each partition has its own engine instance. The engine owns a WAL, a memtable, SSTable levels, and a cache — no shared mutable state between partitions.
+
+## Data Model
+
+flushdb uses a **two-level sorted map**: records contain items.
+
+<ExcalidrawDiagram file="/diagrams/data-model.excalidraw" height={200} />
+
+To store this in a flat sorted key space, flushdb encodes a **composite key**: `[record_id_bytes][0x00][item_key_bytes]`. The `0x00` separator works because record IDs are valid UTF-8 (no null bytes). This encoding guarantees:
+
+- All items in a record are contiguous in sort order
+- Range scans within a record are a prefix scan
+- Raw byte comparison (`memcmp`) gives correct ordering
+
+This single encoding is used everywhere: WAL entries, memtable skip list, SSTables, bloom filters.
+
+## Shard-Per-Core
+
+The engine uses a single-owner, shard-per-core architecture. Each partition's data structures are pinned to a specific CPU core. There are **no `Arc<Mutex<>>` on the hot path** — no shared mutable state, no lock contention, no priority inversion.
+
+- The owning core writes directly to its memtable and WAL buffer with plain pointer operations.
+- Cross-core reads are posted as tasks via lock-free SPSC queues.
+- Priority scheduling: reads/writes (P0, immediate) > flush/WAL commit (P1, yields within 10μs) > compaction (P2, yields within 50μs).
+
+## Write Path
+
+<ExcalidrawDiagram file="/diagrams/write-path.excalidraw" height={500} />
+
+1. Client sends `PutItems` or `DeleteItems` over gRPC.
+2. Server routes to the correct partition via record ID hash.
+3. Entry is appended to the **WAL**. Writes are batched via **group commit** — fsync happens every 200μs or 256KB, amortizing the cost across concurrent writers for 5-10x throughput.
+4. Entry is inserted into the active **memtable** (a skip list backed by an arena allocator).
+5. Write is ACK'd to the client. Durability invariant: ACK is only sent after fsync.
+6. When the memtable reaches 64 MB (or 5 minutes pass), it is **frozen** and a new empty memtable takes its place.
+7. A background **flush** writes the frozen memtable as an SSTable to S3 (Level 0).
+8. The **manifest** is updated via a conditional PUT to S3 (`If-None-Match: *`), acting as compare-and-swap.
+9. WAL segments covering the flushed data are deleted.
+
+Every write also carries a 24-byte **idempotency token** (8-byte client ID + 16-byte UUID). The engine deduplicates at the memtable level and persists token hashes in the SSTable. Network retries, crashes, and failovers cannot produce duplicate writes.
+
+## Read Path
+
+Reads merge results across all layers, newest to oldest:
+
+```
+Active memtable → Frozen memtables → L0 → L1 → L2 → L3
+```
+
+For each SSTable, a **bloom filter** check on the record ID eliminates files that definitely don't contain the key. Bloom filters are built over record IDs (not full composite keys), so a single check covers all items in a record. Data blocks are fetched through the three-tier cache.
+
+**Point reads** (`match_keys`) look up specific item keys. **Range reads** (`match_range`) scan a key range. **Full scans** (`match_all`) return all items in a record.
+
+Pagination is **byte-based** — the client specifies a page size in bytes, not item count. This gives predictable response sizes regardless of value sizes. The page token is the last item key seen; resume by seeking to `(record_id, last_key + 1)`.
+
+## Compaction
+
+Compaction merges SSTables to reduce read amplification and reclaim tombstone space. flushdb uses **leveled compaction** with a 10x size ratio — bounded read amplification (at most one SSTable per level for point reads) at the cost of higher write amplification. For a read-heavy workload with S3 latency, minimizing reads is critical.
+
+| Level | Max Size | Trigger |
+|-------|----------|---------|
+| L0 | 4 files | All L0 → overlapping L1 range |
+| L1 | 256 MB | One L1 file → overlapping L2 range |
+| L2 | 2.56 GB | One L2 file → overlapping L3 range |
+| L3 | 25.6 GB | Tombstone TTL expiry (1 hour) |
+
+**Backpressure:** At 8 L0 files, writes are throttled. At 12, writes are stalled with `RESOURCE_EXHAUSTED`.
+
+## Manifest
+
+The manifest is the **single source of truth** for which SSTables exist at each level. It lives in S3 and is updated atomically using conditional writes (`If-None-Match: *`). This eliminates the need for external coordination (ZooKeeper, etcd) — S3 itself is the consensus layer.
+
+Manifest IDs are zero-padded 20-digit integers. The highest ID is always the current version. Two writers computing the same next ID race; exactly one wins (HTTP 200), the other gets HTTP 412 and retries.
+
+Each manifest carries a **writer epoch** and **compactor epoch** for zombie fencing. When a node takes ownership of a partition, it bumps the epoch. If the old node's flush or compaction completes after the takeover, the epoch check rejects it — preventing corruption.
+
+## Three-Tier Cache
+
+| Tier | Latency | Policy |
+|------|---------|--------|
+| DRAM | &lt;1ms | W-TinyLFU admission, segmented LRU eviction |
+| NVMe | &lt;5ms | Warm blocks evicted from DRAM |
+| S3 | 50-200ms | Source of truth |
+
+W-TinyLFU is scan-resistant: a large range scan cannot evict frequently-accessed blocks. A small window cache (1% of DRAM) admits all entries; they compete for the main cache (99%) only if their access frequency exceeds the eviction candidate's frequency.
+
+Additional optimizations:
+- **Pinned metadata** — Index and filter blocks for live SSTables stay in DRAM permanently.
+- **Continuity tracking** — After a full record scan is cached, point lookups for missing keys skip S3 entirely (negative lookup cache).
+- **Coalescing fetches** — Adjacent S3 block requests merge into a single byte-range GET.
+- **GET budget** — Configurable max S3 GETs per read (default 8) to bound tail latency.
+
+## Multi-Tenancy
+
+Each **namespace** is an independent database with its own partition set, engine instances, compaction schedule, and S3 key prefix. The `NamespaceManager` handles lifecycle, and the `PartitionRouter` maps record IDs to partitions.
+
+Namespaces are configured at creation: partition count (power of 2), partition key strategy (simple, composite, prefix, custom hash), memtable size, compaction strategy, bloom filter FPR, and latency SLOs.
+
+## S3 Object Layout
+
+All persistent state is organized under namespace-scoped prefixes with **128-way hash sharding** to avoid S3 partition throttling (~448K PUTs/s, ~704K GETs/s aggregate):
+
+```
+s3://{bucket}/{hash % 128}/flushdb/{namespace}/
+  ├── manifests/          Versioned manifest files
+  ├── sstables/L0..L3/    SSTable data files (ULIDs)
+  ├── blobs/              Value-separated large values (32KB-4MB)
+  ├── chunks/             Chunked large values (≥4MB)
+  └── leases/             Partition ownership leases
+```
+
+SSTable IDs use ULIDs — sortable by creation time and distributed uniformly across hash prefixes.
+
+## Recovery
+
+On startup:
+1. Read the latest manifest from S3 to restore SSTable level state.
+2. Replay WAL entries with sequence numbers > `last_flushed_sequence` from the manifest.
+3. Rebuild memtable and dedup set from replayed entries.
+
+The WAL is the safety net. The manifest is the commit point. Zero data loss for ACK'd writes, assuming the WAL survived the crash.

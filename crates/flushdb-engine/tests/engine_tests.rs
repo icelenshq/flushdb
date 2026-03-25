@@ -1086,3 +1086,58 @@ async fn test_write_stall_rejects_on_memory_pressure() {
         other => panic!("expected ResourceExhausted for memtable_memory, got: {:?}", other),
     }
 }
+
+#[tokio::test]
+async fn test_dedup_does_not_write_duplicate_to_wal() {
+    let dir = TempDir::new().unwrap();
+    let (config, backend) = test_config(&dir, "test-ns");
+
+    let token = IdempotencyToken::new(1);
+
+    // Write, then attempt duplicate
+    {
+        let mut engine = Engine::open(backend.clone(), config.clone()).await.unwrap();
+        engine
+            .put(b"rec1", b"key1", Bytes::from("v1"), Bytes::new(), Some(token))
+            .await
+            .unwrap();
+
+        let result = engine
+            .put(b"rec1", b"key1", Bytes::from("v2"), Bytes::new(), Some(token))
+            .await;
+        assert!(result.is_err());
+    }
+
+    // Re-open (recovery replays WAL). If the duplicate was in WAL, recovery
+    // would previously fail. Now it should succeed cleanly.
+    let engine = Engine::open(backend, config).await.unwrap();
+    let result = engine.get(b"rec1", b"key1").await.unwrap().unwrap();
+    assert_eq!(result.value, Bytes::from("v1"));
+}
+
+#[tokio::test]
+async fn test_dedup_does_not_consume_sequence_on_duplicate() {
+    let dir = TempDir::new().unwrap();
+    let (config, backend) = test_config(&dir, "test-ns");
+    let mut engine = Engine::open(backend, config).await.unwrap();
+
+    let token = IdempotencyToken::new(1);
+
+    let seq1 = engine
+        .put(b"rec1", b"key1", Bytes::from("v1"), Bytes::new(), Some(token))
+        .await
+        .unwrap();
+
+    // Duplicate should fail
+    let _ = engine
+        .put(b"rec1", b"key1", Bytes::from("v2"), Bytes::new(), Some(token))
+        .await;
+
+    // Next successful write should get seq1 + 1 (no gap)
+    let seq2 = engine
+        .put(b"rec1", b"key2", Bytes::from("v3"), Bytes::new(), None)
+        .await
+        .unwrap();
+
+    assert_eq!(seq2, seq1 + 1, "duplicate should not consume a sequence number");
+}

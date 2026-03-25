@@ -1,0 +1,25 @@
+---
+sidebar_position: 6
+title: Flush Pipeline
+---
+
+import ExcalidrawDiagram from '@site/src/components/ExcalidrawDiagram';
+
+# Flush Pipeline
+
+The complete sequence from frozen memtable to durable S3 state.
+
+## Flow
+
+<ExcalidrawDiagram file="/diagrams/flush-pipeline.excalidraw" height={550} />
+
+## Failure Modes
+
+| Crash Point | S3 State | Recovery |
+|-------------|----------|----------|
+| During build | Unchanged | WAL replay rebuilds memtable |
+| During upload | Incomplete multipart | S3 lifecycle aborts it. WAL replay. |
+| During CAS | SSTable on S3, not in manifest | Orphan GC deletes it. WAL replay. |
+| After CAS, before WAL cleanup | Manifest updated, WAL intact | WAL replay is idempotent |
+
+**The WAL is the safety net. The manifest CAS is the commit point.**

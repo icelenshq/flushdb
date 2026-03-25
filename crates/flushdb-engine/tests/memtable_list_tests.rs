@@ -838,3 +838,66 @@ fn test_is_memory_backpressured_over_limit() {
 
     assert!(list.is_memory_backpressured());
 }
+
+// === check_dedup Tests ===
+
+#[test]
+fn test_check_dedup_ok_for_new_token() {
+    let list = new_list();
+    let token = make_token(42);
+    list.check_dedup(&token).expect("unseen token should pass check_dedup");
+}
+
+#[test]
+fn test_check_dedup_rejects_active_token() {
+    let mut list = new_list();
+    let token = make_token(1);
+    list.insert(make_put_with_token("r1", "k1", "v1", token))
+        .unwrap();
+
+    let err = list.check_dedup(&token).unwrap_err();
+    assert!(matches!(err, FlushError::DuplicateToken { .. }));
+}
+
+#[test]
+fn test_check_dedup_rejects_frozen_token() {
+    let mut list = new_list();
+    let token = make_token(1);
+    list.insert(make_put_with_token("r1", "k1", "v1", token))
+        .unwrap();
+    list.freeze_active().unwrap();
+
+    let err = list.check_dedup(&token).unwrap_err();
+    assert!(matches!(err, FlushError::DuplicateToken { .. }));
+}
+
+#[test]
+fn test_check_dedup_none_always_ok() {
+    let mut list = new_list();
+    list.insert(make_put("r1", "k1", "v1")).unwrap();
+
+    list.check_dedup(&IdempotencyToken::none())
+        .expect("none token should always pass check_dedup");
+}
+
+#[test]
+fn test_check_dedup_across_multiple_frozen() {
+    let mut list = new_list();
+
+    let token1 = make_token(1);
+    list.insert(make_put_with_token("r1", "k1", "v1", token1))
+        .unwrap();
+    list.freeze_active().unwrap();
+
+    let token2 = make_token(2);
+    list.insert(make_put_with_token("r1", "k2", "v2", token2))
+        .unwrap();
+    list.freeze_active().unwrap();
+
+    // Both frozen tokens should be caught
+    assert!(list.check_dedup(&token1).is_err());
+    assert!(list.check_dedup(&token2).is_err());
+
+    // New token should pass
+    list.check_dedup(&make_token(99)).unwrap();
+}

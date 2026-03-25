@@ -75,6 +75,25 @@ impl IdempotencyToken {
         &self.data
     }
 
+    /// Derives a unique token for a specific item index within a batch request.
+    ///
+    /// - `index == 0` returns `self` unchanged (single-item backward compat).
+    /// - `is_none()` returns `none()` (no-dedup requests are unaffected).
+    /// - XORs into the UUID portion (bytes 8..12) so `generation_time` is preserved
+    ///   for TTL / drift checks.
+    pub fn derive_for_index(&self, index: u32) -> Self {
+        if self.is_none() || index == 0 {
+            return *self;
+        }
+        let mut derived = self.data;
+        let idx = index.to_le_bytes();
+        derived[8] ^= idx[0];
+        derived[9] ^= idx[1];
+        derived[10] ^= idx[2];
+        derived[11] ^= idx[3];
+        Self { data: derived }
+    }
+
     /// Returns `true` if this token's drift from `now_ms` is within `max_drift_ms`.
     /// The none sentinel always passes.
     pub fn is_within_drift(&self, now_ms: u64, max_drift_ms: u64) -> bool {
