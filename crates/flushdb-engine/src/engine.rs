@@ -157,6 +157,9 @@ impl<B: StorageBackend + Clone + 'static> Engine<B> {
         let key = CompositeKey::new(record_id, item_key)?;
         let token = idempotency_token.unwrap_or_else(IdempotencyToken::none);
 
+        // Check dedup BEFORE WAL append to prevent duplicate WAL entries
+        self.memtable_list.check_dedup(&token)?;
+
         let seq = self.next_sequence;
         self.next_sequence += 1;
 
@@ -169,7 +172,6 @@ impl<B: StorageBackend + Clone + 'static> Engine<B> {
             EntryType::Put,
         );
 
-        // Write to WAL
         let wal_entry = WalEntry::from_memtable_entry(&entry, self.config.namespace.as_bytes());
         self.wal_manager.append(wal_entry, self.generation_counter).await?;
 

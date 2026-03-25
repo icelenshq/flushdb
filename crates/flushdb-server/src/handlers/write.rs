@@ -21,9 +21,11 @@ pub async fn handle_put_items<B: StorageBackend + Clone + 'static>(
     validate_record_id(&req.id).map_err(flush_error_to_status)?;
     validate_items(&req.items).map_err(flush_error_to_status)?;
 
-    let token = proto_to_idempotency_token(req.idempotency_token).map_err(flush_error_to_status)?;
+    let base_token =
+        proto_to_idempotency_token(req.idempotency_token).map_err(flush_error_to_status)?;
 
-    for item in &req.items {
+    for (index, item) in req.items.iter().enumerate() {
+        let item_token = base_token.derive_for_index(index as u32);
         match service
             .namespace_manager
             .put(
@@ -32,7 +34,7 @@ pub async fn handle_put_items<B: StorageBackend + Clone + 'static>(
                 &item.key,
                 Bytes::from(item.value.clone()),
                 Bytes::from(item.metadata.clone()),
-                token,
+                item_token,
             )
             .await
         {

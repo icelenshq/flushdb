@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use flushdb_types::{FlushError, IdempotencyToken};
 
 #[test]
@@ -206,4 +208,53 @@ fn test_is_within_drift_extreme_values_no_panic() {
     assert!(!token2.is_within_drift(u64::MAX, 0));
     // now_ms = u64::MAX, max_drift = u64::MAX: should be within drift
     assert!(token2.is_within_drift(u64::MAX, u64::MAX));
+}
+
+// === derive_for_index Tests ===
+
+#[test]
+fn test_derive_for_index_zero_returns_original() {
+    let token = IdempotencyToken::new(5000);
+    assert_eq!(token.derive_for_index(0), token);
+}
+
+#[test]
+fn test_derive_for_index_none_returns_none() {
+    let none = IdempotencyToken::none();
+    assert!(none.derive_for_index(0).is_none());
+    assert!(none.derive_for_index(1).is_none());
+    assert!(none.derive_for_index(u32::MAX).is_none());
+}
+
+#[test]
+fn test_derive_for_index_produces_unique_tokens() {
+    let base = IdempotencyToken::new(1000);
+    let mut seen = HashSet::new();
+    for i in 0..100u32 {
+        let derived = base.derive_for_index(i);
+        assert!(seen.insert(derived), "index {i} produced a duplicate token");
+    }
+}
+
+#[test]
+fn test_derive_for_index_deterministic() {
+    let base = IdempotencyToken::new(1000);
+    assert_eq!(base.derive_for_index(3), base.derive_for_index(3));
+    assert_eq!(base.derive_for_index(99), base.derive_for_index(99));
+}
+
+#[test]
+fn test_derive_for_index_preserves_generation_time() {
+    let gen_time = 1_700_000_000_000u64;
+    let base = IdempotencyToken::new(gen_time);
+    for i in 0..10u32 {
+        assert_eq!(base.derive_for_index(i).generation_time(), gen_time);
+    }
+}
+
+#[test]
+fn test_derive_for_index_nonzero_differs_from_original() {
+    let base = IdempotencyToken::new(1000);
+    assert_ne!(base.derive_for_index(1), base);
+    assert_ne!(base.derive_for_index(2), base);
 }

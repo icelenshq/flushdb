@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use flushdb_types::{FlushResult, StorageBackend};
+use flushdb_types::{FlushError, FlushResult, StorageBackend};
 use flushdb_wal::WalManager;
 
 use crate::block_fetcher::BlockFetcher;
@@ -73,8 +73,19 @@ pub async fn recover<B: StorageBackend>(
             }
 
             let memtable_entry = wal_entry.to_memtable_entry()?;
-            memtable_list.insert(memtable_entry)?;
-            wal_entries_replayed += 1;
+            match memtable_list.insert(memtable_entry) {
+                Ok(_) => {
+                    wal_entries_replayed += 1;
+                }
+                Err(FlushError::DuplicateToken { token }) => {
+                    tracing::warn!(
+                        sequence_number = seq,
+                        token = %token,
+                        "skipping duplicate token during WAL replay"
+                    );
+                }
+                Err(e) => return Err(e),
+            }
         }
     }
 

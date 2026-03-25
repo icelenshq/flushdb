@@ -1,7 +1,9 @@
 use std::cmp::Ordering;
 use std::time::Duration;
 
-use flushdb_types::{CompositeKey, EntryType, FlushError, FlushResult, MemtableEntry};
+use flushdb_types::{
+    CompositeKey, EntryType, FlushError, FlushResult, IdempotencyToken, MemtableEntry,
+};
 
 use crate::memtable::{Memtable, MemtableConfig};
 use crate::range_tombstone::RangeTombstone;
@@ -19,6 +21,25 @@ impl MemtableList {
             frozen: Vec::new(),
             config,
         }
+    }
+
+    pub fn check_dedup(&self, token: &IdempotencyToken) -> FlushResult<()> {
+        if token.is_none() {
+            return Ok(());
+        }
+        if self.active.check_dedup(token) {
+            return Err(FlushError::DuplicateToken {
+                token: format!("{:?}", token),
+            });
+        }
+        for frozen_mt in &self.frozen {
+            if frozen_mt.check_dedup(token) {
+                return Err(FlushError::DuplicateToken {
+                    token: format!("{:?}", token),
+                });
+            }
+        }
+        Ok(())
     }
 
     pub fn insert(&mut self, entry: MemtableEntry) -> FlushResult<u64> {
