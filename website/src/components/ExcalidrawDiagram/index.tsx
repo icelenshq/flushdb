@@ -1,13 +1,15 @@
 import React, {useEffect, useRef, useState} from 'react';
 import BrowserOnly from '@docusaurus/BrowserOnly';
 import {useColorMode} from '@docusaurus/theme-common';
+import {applyTheme, defaultTheme, type DiagramTheme} from './diagramTheme';
 
 interface ExcalidrawDiagramProps {
   file: string;
   height?: number;
+  theme?: DiagramTheme;
 }
 
-function ExcalidrawViewer({file, height = 500}: ExcalidrawDiagramProps) {
+function ExcalidrawViewer({file, height = 500, theme}: ExcalidrawDiagramProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -33,8 +35,13 @@ function ExcalidrawViewer({file, height = 500}: ExcalidrawDiagramProps) {
         const data = await res.json();
         if (cancelled) return;
 
+        const merged = theme
+          ? {...defaultTheme, ...theme}
+          : defaultTheme;
+        const themedElements = applyTheme(data.elements, merged);
+
         const svg = await mod.exportToSvg({
-          elements: data.elements,
+          elements: themedElements,
           appState: {
             ...data.appState,
             exportWithDarkMode: colorMode === 'dark',
@@ -59,7 +66,7 @@ function ExcalidrawViewer({file, height = 500}: ExcalidrawDiagramProps) {
     return () => {
       cancelled = true;
     };
-  }, [file, colorMode]);
+  }, [file, colorMode, theme]);
 
   return (
     <div
@@ -82,6 +89,8 @@ function ExcalidrawViewer({file, height = 500}: ExcalidrawDiagramProps) {
     </div>
   );
 }
+
+export {FONT_FAMILY, defaultTheme, type DiagramTheme} from './diagramTheme';
 
 export default function ExcalidrawDiagram(props: ExcalidrawDiagramProps) {
   return (
