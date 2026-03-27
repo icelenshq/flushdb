@@ -101,14 +101,9 @@ An adjacency list maps each vertex to its edges. The two-level map is a natural 
 | Edge properties | Item value |
 | Adjacency list | All items in a record |
 
-```
-Record: user:alice
-  ├── follows:user:bob       → {since: "2024-01-15"}
-  ├── follows:user:charlie   → {since: "2024-03-20"}
-  ├── post:1710000001000     → {text: "Hello world", likes: 42}
-  ├── post:1710000005000     → {text: "Second post", likes: 7}
-  └── profile                → {name: "Alice", bio: "..."}
-```
+Because item keys sort lexicographically, all `follows:*` edges end up physically adjacent, all `post:*` entries are contiguous, and so on. A prefix scan on any edge type touches only those items:
+
+<ExcalidrawDiagram file="/diagrams/social-graph-adjacency.excalidraw" height={310} />
 
 Why this works well:
 
