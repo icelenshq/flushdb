@@ -1,0 +1,129 @@
+---
+sidebar_position: 3
+title: Data Model Patterns
+---
+
+import ExcalidrawDiagram from '@site/src/components/ExcalidrawDiagram';
+
+# Data Model Patterns
+
+flushdb stores data as a **two-level sorted map**: each **record** contains a sorted set of **items**. You provide a `record_id` and an `item_key` — flushdb keeps them sorted for you.
+
+```
+put(record_id, item_key, value)
+```
+
+That's it. No schema, no column definitions, no secondary indexes.
+
+## How It Works Internally
+
+### Composite Key Encoding
+
+When you call `put("product:001", "price", value)`, flushdb encodes both parts into a single byte string:
+
+<ExcalidrawDiagram file="/diagrams/composite-key-encoding.excalidraw" height={230} />
+
+The `0x00` separator works because `record_id` cannot contain null bytes. This encoding has a key property: **raw byte comparison sorts by record_id first, then by item_key within each record.** No custom comparator needed.
+
+### The Skip List Sorts It
+
+There is no separate "sorted set per record" data structure. The memtable is a single **skip list** — a probabilistic sorted structure similar to a balanced BST but with O(log n) insert and lookup.
+
+When you insert entries in any order, the skip list places each composite key in its sorted position:
+
+<ExcalidrawDiagram file="/diagrams/skiplist-sorting.excalidraw" height={160} />
+
+Because every key for `product:001` shares the same prefix, they end up **contiguous** in the skip list automatically. The two-level map is an illusion created by the key encoding — the actual data structure is flat.
+
+### How Record Scan Works
+
+To fetch all items for a record, flushdb does **seek + bounded iteration**, not a full scan:
+
+<ExcalidrawDiagram file="/diagrams/record-scan.excalidraw" height={280} />
+
+1. Build the minimum possible key for that record: `[record_id][0x00]` (empty item key)
+2. Skip list seeks to that position in O(log n)
+3. Iterate forward, yielding each node
+4. The moment a node's `record_id` differs from the target, stop
+
+This touches only the target record's items. Total cost: **O(log n + k)** where k is the number of items in the record.
+
+Prefix scans work the same way. `match_range("variant:", "variant:\xFF")` within a record seeks to the first variant key, iterates through all variants, and stops — without touching `info`, `price`, or `review` items.
+
+## Example: E-Commerce Catalog
+
+The `flushdb-demo` benchmark uses this pattern with a product catalog. Each product is one record with 8–18 items:
+
+| Item Key Pattern | Example Value | Count |
+|---|---|---|
+| `info` | `{name, description, category, brand}` | 1 |
+| `price` | `{current_cents, original_cents, currency}` | 1 |
+| `inventory:<warehouse>` | `{count, reserved}` | 1–3 |
+| `variant:<color>:<size>` | `{sku_suffix, extra_cents, in_stock}` | 2–6 |
+| `review:<timestamp>` | `{rating, author, title, body}` | 1–5 |
+
+The physical order on disk for `product:000042`:
+
+```
+info
+inventory:warehouse-central
+inventory:warehouse-east
+inventory:warehouse-west
+price
+review:1710000042000
+review:1710000042001
+variant:blue:M
+variant:red:XL
+```
+
+All inventory items are contiguous. All variants are contiguous. A prefix scan on `variant:` returns every variant without touching anything else.
+
+### Benchmark Workload
+
+| Operation | Ratio |
+|---|---|
+| Point read | 60% |
+| Write (new product) | 15% |
+| Update (price + inventory) | 15% |
+| Delete | 5% |
+| Scan (all items in a record) | 5% |
+
+Data is deterministic (seed 42) for reproducibility. See [Operations - Benchmarks](./operations#benchmarks) for how to run the benchmark.
+
+## Example: Social Graph
+
+An adjacency list maps each vertex to its edges. The two-level map is a natural fit:
+
+| Graph Concept | flushdb Mapping |
+|---|---|
+| Vertex | Record (`record_id = vertex_id`) |
+| Edge | Item (`item_key` = edge type + target) |
+| Edge properties | Item value |
+| Adjacency list | All items in a record |
+
+Because item keys sort lexicographically, all `follows:*` edges end up physically adjacent, all `post:*` entries are contiguous, and so on. A prefix scan on any edge type touches only those items:
+
+<ExcalidrawDiagram file="/diagrams/social-graph-adjacency.excalidraw" height={310} />
+
+Why this works well:
+
+- **Contiguous edges.** All edges share the same record_id prefix — they're physically adjacent. Reading a full adjacency list is sequential, not random I/O.
+- **Edge type filtering.** `match_range("follows:", "follows:\xFF")` returns all follow edges without touching posts or profile.
+- **Temporal ordering.** Keys like `post:<timestamp>` sort by time automatically. "Last 10 posts" is a reverse prefix scan.
+- **Range tombstones.** Deleting all `follows:*` for a vertex is a single range tombstone, not one delete per edge.
+
+For multi-hop traversals or subgraph matching, a dedicated graph database (Neo4j, TigerGraph) is a better fit. flushdb is optimized for single-hop fan-out reads and prefix scans — the same tradeoff as storing adjacency lists in Cassandra or DynamoDB.
+
+## The General Pattern
+
+The two-level map generalizes to many domains:
+
+| Domain | record_id | item_key | Query pattern |
+|---|---|---|---|
+| E-commerce | `product:000042` | `info`, `price`, `variant:*` | Point reads + prefix scans |
+| Social graph | `user:alice` | `follows:*`, `post:*` | Fan-out reads, temporal scans |
+| Time series | `sensor:temp-01` | `reading:<timestamp>` | Range scans by time window |
+| Document store | `doc:invoice-789` | `field:*`, `attachment:*` | Full record reads |
+| IoT state | `device:thermostat-5` | `config`, `telemetry:<ts>` | Latest-N queries |
+
+In every case: the record groups related data, the sorted item keys enable efficient sub-group access through prefix scans, and the skip list keeps everything sorted automatically.
