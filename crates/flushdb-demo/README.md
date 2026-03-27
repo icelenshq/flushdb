@@ -61,29 +61,25 @@ docker compose run --rm \
 
 ### 5. Compare with Cassandra
 
-Start Cassandra alongside the flushdb stack using the `benchmark` profile:
+From the repo root, use the sequential Docker-only benchmark runner:
 
 ```bash
-docker compose --profile benchmark up -d
-# Wait for Cassandra to be healthy (~30-60s)
-docker compose --profile benchmark run --rm \
-  -e FLUSHDB_SERVER_ADDR=http://flushdb-server:50051 \
-  -e CASSANDRA_ADDR=cassandra:9042 \
-  flushdb-demo bench compare --duration 30 --concurrency 4 --product-range 1000 \
-    --seed-products 1000 --warmup-secs 10
+./scripts/benchmark.sh --duration 30 --warmup 5
 ```
 
 The benchmark protocol ensures a fair comparison:
 
 1. **Equal resources**: Both database processes get 2 CPUs + 1 GB memory (set in `docker-compose.yml`). MinIO (flushdb's S3 backend) runs separately with 1 CPU + 512 MB.
 2. **Warmup phase**: Runs the workload for `--warmup-secs` (default 10s) against each backend before measuring. This eliminates JVM cold-start bias for Cassandra and warms connection pools for both.
-3. **Identical workload**: Same RNG seed, same product range, same operation mix for both backends.
-4. **Sequential measurement**: Each backend is benchmarked independently (no resource contention between them during measurement).
+3. **Identical workload per step**: Same RNG seed, same operation mix, and the same scale step for both backends.
+4. **Sequential measurement**: Smoke checks, flushdb, and Cassandra all run one after another with teardown between phases.
+5. **Docker-only client**: `flushdb-demo` also runs inside Docker, so the benchmark path is fully containerized.
 
 ### 6. Tear down
 
 ```bash
-docker compose --profile benchmark down -v
+docker compose --profile flushdb down -v
+docker compose --profile cassandra down -v
 ```
 
 ## Running locally

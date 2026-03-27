@@ -20,12 +20,7 @@ impl DirtySegmentTracker {
         }
     }
 
-    pub fn record_write(
-        &mut self,
-        segment_number: u64,
-        generation_id: u64,
-        sequence_number: u64,
-    ) {
+    pub fn record_write(&mut self, segment_number: u64, generation_id: u64, sequence_number: u64) {
         self.segment_created_at
             .entry(segment_number)
             .or_insert_with(Instant::now);
@@ -101,10 +96,7 @@ impl DirtySegmentTracker {
             .iter()
             .filter(|(seg_num, created_at)| {
                 now.duration_since(**created_at) > max_age
-                    && self
-                        .dirty_maps
-                        .get(seg_num)
-                        .is_some_and(|m| !m.is_empty())
+                    && self.dirty_maps.get(seg_num).is_some_and(|m| !m.is_empty())
             })
             .map(|(&seg_num, _)| seg_num)
             .collect();
@@ -115,11 +107,7 @@ impl DirtySegmentTracker {
     pub fn oldest_pinned_segment(&self) -> Option<u64> {
         self.segment_created_at
             .iter()
-            .filter(|(seg_num, _)| {
-                self.dirty_maps
-                    .get(seg_num)
-                    .is_some_and(|m| !m.is_empty())
-            })
+            .filter(|(seg_num, _)| self.dirty_maps.get(seg_num).is_some_and(|m| !m.is_empty()))
             .min_by_key(|(_, created_at)| *created_at)
             .map(|(&seg_num, _)| seg_num)
     }
@@ -137,10 +125,7 @@ impl DirtySegmentTracker {
         let now = Instant::now();
         self.segment_created_at.iter().any(|(seg_num, created_at)| {
             now.duration_since(*created_at) > max_age
-                && self
-                    .dirty_maps
-                    .get(seg_num)
-                    .is_some_and(|m| !m.is_empty())
+                && self.dirty_maps.get(seg_num).is_some_and(|m| !m.is_empty())
         })
     }
 

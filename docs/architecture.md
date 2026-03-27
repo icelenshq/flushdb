@@ -93,15 +93,16 @@ The engine uses a single-owner, shard-per-core architecture. Each partition's da
 
 1. Client sends `PutItems` or `DeleteItems` over gRPC.
 2. Server routes to the correct partition via record ID hash.
-3. Entry is appended to the **WAL**. Writes are batched via **group commit** — fsync happens every 200μs or 256KB, amortizing the cost across concurrent writers for 5-10x throughput.
-4. Entry is inserted into the active **memtable** (a skip list backed by an arena allocator).
-5. Write is ACK'd to the client. Durability invariant: ACK is only sent after fsync.
-6. When the memtable reaches 64 MB (or 5 minutes pass), it is **frozen** and a new empty memtable takes its place.
-7. A background **flush** writes the frozen memtable as an SSTable to S3 (Level 0).
-8. The **manifest** is updated via a conditional PUT to S3 (`If-None-Match: *`), acting as compare-and-swap.
-9. WAL segments covering the flushed data are deleted.
+3. Entries are appended to the **WAL**. `PutItems` with multiple items uses a **batch append** — all entries are submitted as a single group commit unit. Individual writes use single append. Both go through **group commit** — fsync happens every 200μs or 256KB, amortizing the cost across concurrent writers for 5-10x throughput.
+4. The engine **awaits a durability notification** from the WAL confirming fsync completed. Sequence numbers are only incremented after durability is confirmed, preventing gaps on failure.
+5. Entries are inserted into the active **memtable** (a skip list backed by an arena allocator). Batch inserts use a pre-checked fast path that skips per-entry validation.
+6. Write is ACK'd to the client. Durability invariant: ACK is only sent after fsync.
+7. When the memtable reaches 64 MB (or 5 minutes pass), it is **frozen** with a generation ID and a new empty memtable takes its place.
+8. A background **flush** writes the frozen memtable as an SSTable to S3 (Level 0).
+9. The **manifest** is updated via a conditional PUT to S3 (`If-None-Match: *`), acting as compare-and-swap.
+10. WAL segments covering the flushed data are deleted.
 
-Every write also carries a 24-byte **idempotency token** (8-byte client ID + 16-byte UUID). The engine deduplicates at the memtable level and persists token hashes in the SSTable. Network retries, crashes, and failovers cannot produce duplicate writes.
+Every write also carries a 24-byte **idempotency token** (8-byte client ID + 16-byte UUID). The engine deduplicates at the memtable level and persists token hashes in the SSTable. For batch writes, duplicate tokens within the same batch are also deduplicated. Network retries, crashes, and failovers cannot produce duplicate writes.
 
 ## Read Path
 

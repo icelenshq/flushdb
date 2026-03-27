@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -7,7 +7,7 @@ use flushdb_types::{CompositeKey, EntryType, EntryValue, FlushResult, Idempotenc
 
 use flushdb_engine::block_fetcher::BlockFetcher;
 use flushdb_engine::cache::{
-    BlockCache, BlockRequest, CacheConfig, CachingBlockFetcher, CoalescingFetcher, is_adjacent,
+    is_adjacent, BlockCache, BlockRequest, CacheConfig, CachingBlockFetcher, CoalescingFetcher,
 };
 use flushdb_engine::sstable::{BlockBuilder, BlockEntry, CompressionType};
 
@@ -262,8 +262,8 @@ async fn test_convenience_fetch_block_delegates() {
 }
 
 fn build_encoded_block(record_id: &str, item_key: &str, value: &[u8]) -> Bytes {
-    let key = CompositeKey::new(record_id.as_bytes(), item_key.as_bytes())
-        .expect("valid composite key");
+    let key =
+        CompositeKey::new(record_id.as_bytes(), item_key.as_bytes()).expect("valid composite key");
     let mut builder = BlockBuilder::new(4096);
     builder.add_entry(
         &key,
@@ -381,4 +381,3 @@ async fn test_adjacent_blocks_coalesce_into_single_fetch() {
     assert_eq!(entries_1.len(), 1);
     assert_eq!(entries_1[0].composite_key.item_key(), b"item_b");
 }
-

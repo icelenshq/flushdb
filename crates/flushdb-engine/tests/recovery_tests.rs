@@ -2,7 +2,7 @@ use bytes::Bytes;
 use tempfile::TempDir;
 
 use flushdb_engine::memtable::MemtableConfig;
-use flushdb_engine::recovery::{RecoveryConfig, recover};
+use flushdb_engine::recovery::{recover, RecoveryConfig};
 use flushdb_engine::{
     CacheConfig, DirectBlockFetcher, Engine, EngineConfig, FlushConfig, ManifestConfig,
 };
@@ -19,7 +19,13 @@ fn setup() -> (TempDir, LocalFsBackend) {
     (dir, backend)
 }
 
-fn make_wal_entry(namespace: &[u8], record_id: &[u8], key: &[u8], value: &[u8], seq: u64) -> WalEntry {
+fn make_wal_entry(
+    namespace: &[u8],
+    record_id: &[u8],
+    key: &[u8],
+    value: &[u8],
+    seq: u64,
+) -> WalEntry {
     let composite_key = CompositeKey::new(record_id, key).unwrap();
     let entry = MemtableEntry::with_sequence(
         composite_key,

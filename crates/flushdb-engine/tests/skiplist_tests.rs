@@ -160,10 +160,7 @@ fn test_entries_sorted_by_composite_key() {
     }
 
     let collected: Vec<&[u8]> = sl.iter().map(|n| n.key.item_key()).collect();
-    assert_eq!(
-        collected,
-        vec![b"a".as_slice(), b"b", b"c", b"d", b"e"]
-    );
+    assert_eq!(collected, vec![b"a".as_slice(), b"b", b"c", b"d", b"e"]);
 }
 
 #[test]
@@ -239,7 +236,12 @@ fn test_approximate_memory_usage_increases() {
     let usage1 = sl.approximate_memory_usage();
     assert!(usage1 > 0);
 
-    sl.insert(make_entry("rec1", "key2", "a longer value string", EntryType::Put));
+    sl.insert(make_entry(
+        "rec1",
+        "key2",
+        "a longer value string",
+        EntryType::Put,
+    ));
     let usage2 = sl.approximate_memory_usage();
     assert!(usage2 > usage1);
 }
@@ -319,11 +321,7 @@ fn test_100k_entries_point_lookup() {
     for _ in 0..1000 {
         let idx = lookup_rng.random_range(0..keys_and_seqs.len());
         let (ref key, _seq, _) = keys_and_seqs[idx];
-        assert!(
-            sl.contains_key(key),
-            "should find key at index {}",
-            idx
-        );
+        assert!(sl.contains_key(key), "should find key at index {}", idx);
     }
 }
 

@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use flushdb_engine::sstable::block_builder::BlockBuilder;
-use flushdb_engine::sstable::block_reader::{BlockEntryIterator, decode_block};
+use flushdb_engine::sstable::block_reader::{decode_block, BlockEntryIterator};
 use flushdb_engine::sstable::types::CompressionType;
 use flushdb_engine::sstable::varint::encode_varint;
 use flushdb_types::{CompositeKey, EntryType, EntryValue, FlushError, IdempotencyToken};
@@ -14,7 +14,14 @@ fn make_key(record_id: &[u8], item_key: &[u8]) -> CompositeKey {
 fn build_block(entries: &[TestEntry], compression: CompressionType) -> Bytes {
     let mut builder = BlockBuilder::new(65536);
     for &(key, value, metadata, entry_type, seq) in entries {
-        builder.add_entry(key, value, metadata, entry_type, seq, IdempotencyToken::none());
+        builder.add_entry(
+            key,
+            value,
+            metadata,
+            entry_type,
+            seq,
+            IdempotencyToken::none(),
+        );
     }
     builder.finish(compression).unwrap().data
 }
@@ -31,7 +38,10 @@ fn test_round_trip_single_entry() {
     let entry_type = EntryType::Put;
     let seq = 42u64;
 
-    let data = build_block(&[(&key, value, metadata, entry_type, seq)], CompressionType::None);
+    let data = build_block(
+        &[(&key, value, metadata, entry_type, seq)],
+        CompressionType::None,
+    );
     let entries = decode_block(&data, CompressionType::None).unwrap();
 
     assert_eq!(entries.len(), 1);
@@ -52,7 +62,15 @@ fn test_round_trip_multiple_entries() {
     let entries_input: Vec<TestEntry> = keys
         .iter()
         .enumerate()
-        .map(|(i, k)| (k, b"value_data" as &[u8], b"meta" as &[u8], EntryType::Put, i as u64))
+        .map(|(i, k)| {
+            (
+                k,
+                b"value_data" as &[u8],
+                b"meta" as &[u8],
+                EntryType::Put,
+                i as u64,
+            )
+        })
         .collect();
 
     let data = build_block(&entries_input, CompressionType::None);
@@ -245,7 +263,15 @@ fn test_round_trip_compression_none() {
     let entries_input: Vec<TestEntry> = keys
         .iter()
         .enumerate()
-        .map(|(i, k)| (k, b"value" as &[u8], b"meta" as &[u8], EntryType::Put, i as u64))
+        .map(|(i, k)| {
+            (
+                k,
+                b"value" as &[u8],
+                b"meta" as &[u8],
+                EntryType::Put,
+                i as u64,
+            )
+        })
         .collect();
 
     let data = build_block(&entries_input, CompressionType::None);
@@ -254,7 +280,10 @@ fn test_round_trip_compression_none() {
     assert_eq!(decoded.len(), 5);
     for (i, entry) in decoded.iter().enumerate() {
         assert_eq!(entry.composite_key, keys[i]);
-        assert_eq!(entry.value, EntryValue::Inline(Bytes::from_static(b"value")));
+        assert_eq!(
+            entry.value,
+            EntryValue::Inline(Bytes::from_static(b"value"))
+        );
         assert_eq!(entry.metadata.as_ref(), b"meta");
         assert_eq!(entry.sequence_number, i as u64);
     }
@@ -269,7 +298,15 @@ fn test_round_trip_compression_snappy() {
     let entries_input: Vec<TestEntry> = keys
         .iter()
         .enumerate()
-        .map(|(i, k)| (k, b"value" as &[u8], b"meta" as &[u8], EntryType::Put, i as u64))
+        .map(|(i, k)| {
+            (
+                k,
+                b"value" as &[u8],
+                b"meta" as &[u8],
+                EntryType::Put,
+                i as u64,
+            )
+        })
         .collect();
 
     let data = build_block(&entries_input, CompressionType::Snappy);
@@ -296,7 +333,15 @@ fn test_round_trip_compression_zstd() {
     let entries_input: Vec<TestEntry> = keys
         .iter()
         .enumerate()
-        .map(|(i, k)| (k, b"value" as &[u8], b"meta" as &[u8], EntryType::Put, i as u64))
+        .map(|(i, k)| {
+            (
+                k,
+                b"value" as &[u8],
+                b"meta" as &[u8],
+                EntryType::Put,
+                i as u64,
+            )
+        })
         .collect();
 
     let data = build_block(&entries_input, CompressionType::Zstd);
@@ -348,8 +393,8 @@ fn test_crc_valid_for_good_block() {
         CompressionType::None,
     );
 
-    let entries = decode_block(&data, CompressionType::None)
-        .expect("unmodified block should pass CRC check");
+    let entries =
+        decode_block(&data, CompressionType::None).expect("unmodified block should pass CRC check");
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].composite_key, key);
 }
@@ -385,10 +430,7 @@ fn test_inline_value_parsed() {
     let decoded = decode_block(&data, CompressionType::None).unwrap();
     assert_eq!(decoded.len(), 1);
     assert!(decoded[0].value.is_inline());
-    assert_eq!(
-        decoded[0].value.inline_value().unwrap().as_ref(),
-        value
-    );
+    assert_eq!(decoded[0].value.inline_value().unwrap().as_ref(), value);
 }
 
 #[test]

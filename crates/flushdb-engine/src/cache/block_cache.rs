@@ -26,9 +26,7 @@ impl CachedBlock {
                 let key_size = entry.composite_key.as_bytes().len();
                 let value_size = match &entry.value {
                     EntryValue::Inline(bytes) => bytes.len(),
-                    EntryValue::BlobRef {
-                        blob_id, ..
-                    } => blob_id.len() + 12,
+                    EntryValue::BlobRef { blob_id, .. } => blob_id.len() + 12,
                 };
                 let metadata_size = entry.metadata.len();
                 key_size + value_size + metadata_size + 40

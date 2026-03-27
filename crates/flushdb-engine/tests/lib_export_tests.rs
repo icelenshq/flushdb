@@ -1,7 +1,6 @@
 use bytes::Bytes;
 use flushdb_engine::{
-    DedupSet, Memtable, MemtableConfig, MemtableList, RangeTombstone, RangeTombstoneIndex,
-    SkipNode,
+    DedupSet, Memtable, MemtableConfig, MemtableList, RangeTombstone, RangeTombstoneIndex, SkipNode,
 };
 use flushdb_types::{CompositeKey, EntryType, IdempotencyToken, MemtableEntry};
 
@@ -122,7 +121,9 @@ fn test_flush_pipeline_simulation() {
     assert_eq!(list.active_entry_count(), 0);
     assert_eq!(list.total_entry_count(), 1000);
 
-    let popped = list.pop_oldest_frozen().expect("should have frozen memtable");
+    let popped = list
+        .pop_oldest_frozen()
+        .expect("should have frozen memtable");
     assert!(popped.is_frozen());
     assert_eq!(popped.entry_count(), 1000);
 
@@ -140,8 +141,7 @@ fn test_flush_pipeline_simulation() {
 
     // Verify completeness
     for (i, node) in nodes.iter().enumerate() {
-        let expected_key =
-            CompositeKey::new(b"r1", format!("k{i:06}").as_bytes()).unwrap();
+        let expected_key = CompositeKey::new(b"r1", format!("k{i:06}").as_bytes()).unwrap();
         assert_eq!(node.key, expected_key);
         assert_eq!(node.value, Bytes::from(format!("v{i:06}")));
     }

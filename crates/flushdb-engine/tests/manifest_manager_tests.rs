@@ -235,10 +235,7 @@ async fn test_compaction_add_and_remove() {
     let compaction_update = ManifestUpdate {
         trigger: ManifestUpdateTrigger::Compaction,
         add_sstables: vec![(Level::L1, l1_meta)],
-        remove_sstables: vec![
-            (Level::L0, "sst1".into()),
-            (Level::L0, "sst2".into()),
-        ],
+        remove_sstables: vec![(Level::L0, "sst1".into()), (Level::L0, "sst2".into())],
         new_last_flushed_sequence: None,
         writer_epoch: manager.writer_epoch,
         compactor_epoch: manager.compactor_epoch,
@@ -491,12 +488,7 @@ async fn test_prune_deletes_manifests_before_second_newest_snapshot() {
     // then each update increments by 1. With snapshot_interval=5,
     // IDs 5, 10, 15, 20 will be snapshots.
     for i in 0..20u64 {
-        let meta = test_sst_meta(
-            &format!("sst-prune-{i}"),
-            b"a\x00",
-            b"z\x00",
-            100,
-        );
+        let meta = test_sst_meta(&format!("sst-prune-{i}"), b"a\x00", b"z\x00", 100);
         let update = ManifestUpdate {
             trigger: ManifestUpdateTrigger::Flush,
             add_sstables: vec![(Level::L0, meta)],

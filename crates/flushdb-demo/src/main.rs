@@ -7,12 +7,16 @@ mod seed;
 pub mod stats;
 mod verify;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
 #[command(name = "flushdb-demo", about = "flushdb demo: seed, bench, verify")]
 struct Cli {
-    #[arg(long, default_value = "http://127.0.0.1:50051", env = "FLUSHDB_SERVER_ADDR")]
+    #[arg(
+        long,
+        default_value = "http://127.0.0.1:50051",
+        env = "FLUSHDB_SERVER_ADDR"
+    )]
     server_addr: String,
 
     #[arg(long, default_value = "ecommerce", env = "FLUSHDB_NAMESPACE")]
@@ -20,6 +24,14 @@ struct Cli {
 
     #[command(subcommand)]
     command: Commands,
+}
+
+#[derive(ValueEnum, Clone)]
+enum BenchPhase {
+    /// Benchmark flushdb only; saves results to --output for use in the cassandra phase.
+    Flushdb,
+    /// Benchmark Cassandra only; loads flushdb results from --flushdb-results for comparison.
+    Cassandra,
 }
 
 #[derive(Subcommand)]
@@ -95,6 +107,15 @@ enum BenchWorkload {
         cassandra_addr: String,
     },
     Compare {
+        /// Which backend to benchmark. Use scripts/benchmark.sh to run both sequentially.
+        #[arg(long)]
+        phase: BenchPhase,
+        /// Path to write flushdb results JSON (required for --phase flushdb).
+        #[arg(long)]
+        output: Option<String>,
+        /// Path to read flushdb results JSON (required for --phase cassandra).
+        #[arg(long, name = "flushdb-results")]
+        flushdb_results: Option<String>,
         #[arg(long, default_value_t = 60)]
         duration: u64,
         #[arg(long, default_value_t = 8)]
@@ -134,7 +155,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             products,
             concurrency,
         } => {
-            println!("Seeding {} products with concurrency {}...", products, concurrency);
+            println!(
+                "Seeding {} products with concurrency {}...",
+                products, concurrency
+            );
             seed::run_seed(seed::SeedConfig {
                 server_addr: cli.server_addr,
                 namespace: cli.namespace,
@@ -239,6 +263,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .map_err(|e| -> Box<dyn std::error::Error> { e })?;
             }
             BenchWorkload::Compare {
+                phase,
+                output,
+                flushdb_results,
                 duration,
                 concurrency,
                 product_range,
@@ -261,9 +288,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     delete_ratio,
                     scan_ratio,
                 };
-                bench::compare::run(&cfg, &cassandra_addr, seed_products, warmup_secs)
-                    .await
-                    .map_err(|e| -> Box<dyn std::error::Error> { e })?;
+                match phase {
+                    BenchPhase::Flushdb => {
+                        let out =
+                            output.ok_or("--output <path> is required for --phase flushdb")?;
+                        bench::compare::run_flushdb_phase(&cfg, &out, seed_products, warmup_secs)
+                            .await
+                            .map_err(|e| -> Box<dyn std::error::Error> { e })?;
+                    }
+                    BenchPhase::Cassandra => {
+                        let results_path = flushdb_results
+                            .ok_or("--flushdb-results <path> is required for --phase cassandra")?;
+                        bench::compare::run_cassandra_phase(
+                            &cfg,
+                            &cassandra_addr,
+                            &results_path,
+                            seed_products,
+                            warmup_secs,
+                        )
+                        .await
+                        .map_err(|e| -> Box<dyn std::error::Error> { e })?;
+                    }
+                }
             }
         },
         Commands::Verify {

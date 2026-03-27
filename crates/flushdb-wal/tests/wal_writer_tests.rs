@@ -368,7 +368,10 @@ fn test_remove_nonexistent_segment_returns_error() {
     let mut writer = WalWriter::open(dir.path(), &config).unwrap();
 
     let result = writer.remove_segment(99999);
-    assert!(result.is_err(), "removing a segment that was never created should fail");
+    assert!(
+        result.is_err(),
+        "removing a segment that was never created should fail"
+    );
 }
 
 #[test]
@@ -396,7 +399,8 @@ fn test_explicit_rotate_on_small_segment() {
         let mut entry = make_entry();
         writer.append(&mut entry).unwrap();
         assert_eq!(
-            entry.sequence_number, 4 + (entry.sequence_number - 4),
+            entry.sequence_number,
+            4 + (entry.sequence_number - 4),
             "sequence should continue from where the previous segment left off"
         );
     }

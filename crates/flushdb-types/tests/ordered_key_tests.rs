@@ -58,7 +58,10 @@ fn test_sort_by_sequence() {
 fn test_sort_node_id_dominates_sequence() {
     let a = OrderedKey::new(1000, 2, 0);
     let b = OrderedKey::new(1000, 1, 999);
-    assert!(a > b, "higher node_id must sort after lower node_id regardless of sequence");
+    assert!(
+        a > b,
+        "higher node_id must sort after lower node_id regardless of sequence"
+    );
 }
 
 #[test]
@@ -85,7 +88,8 @@ fn test_sort_matches_byte_comparison() {
     let mut sorted_by_bytes: Vec<([u8; 12], OrderedKey)> =
         keys.iter().map(|k| (k.to_bytes(), *k)).collect();
     sorted_by_bytes.sort_by(|a, b| a.0.cmp(&b.0));
-    let sorted_by_bytes_keys: Vec<OrderedKey> = sorted_by_bytes.into_iter().map(|(_, k)| k).collect();
+    let sorted_by_bytes_keys: Vec<OrderedKey> =
+        sorted_by_bytes.into_iter().map(|(_, k)| k).collect();
 
     assert_eq!(sorted_by_ord, sorted_by_bytes_keys);
 }

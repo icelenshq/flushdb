@@ -1,8 +1,8 @@
 use flushdb_types::{FlushError, FlushResult, StorageBackend};
 
 use super::types::{
-    Manifest, ManifestConfig, ManifestId, ManifestUpdate, ManifestUpdateTrigger, manifest_path,
-    manifest_prefix,
+    manifest_path, manifest_prefix, Manifest, ManifestConfig, ManifestId, ManifestUpdate,
+    ManifestUpdateTrigger,
 };
 
 const MAX_CAS_RETRIES: usize = 5;
@@ -35,11 +35,7 @@ impl<B: StorageBackend> ManifestManager<B> {
         if entries.is_empty() {
             // Fresh namespace — store the initial empty manifest
             let manifest = Manifest::new_empty(&self.namespace);
-            let path = manifest_path(
-                &self.config.base_path,
-                &self.namespace,
-                &ManifestId::ZERO,
-            );
+            let path = manifest_path(&self.config.base_path, &self.namespace, &ManifestId::ZERO);
             let data = manifest.serialize()?;
             // Use conditional_put for the initial write
             match self.backend.conditional_put(&path, data).await {
@@ -58,10 +54,7 @@ impl<B: StorageBackend> ManifestManager<B> {
 
         // Pick the highest ManifestId (list_prefix returns lexicographically sorted)
         let last_path = entries.last().unwrap();
-        let filename = last_path
-            .rsplit('/')
-            .next()
-            .unwrap_or(last_path);
+        let filename = last_path.rsplit('/').next().unwrap_or(last_path);
         let highest_id = ManifestId::from_path_string(filename)?;
 
         let path = manifest_path(&self.config.base_path, &self.namespace, &highest_id);

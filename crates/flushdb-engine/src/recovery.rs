@@ -32,8 +32,11 @@ pub async fn recover<B: StorageBackend>(
     fetcher: &dyn BlockFetcher,
 ) -> FlushResult<RecoveryResult<B>> {
     // Step 1: Load manifest
-    let mut manifest_manager =
-        ManifestManager::new(backend, namespace.to_string(), config.manifest_config.clone());
+    let mut manifest_manager = ManifestManager::new(
+        backend,
+        namespace.to_string(),
+        config.manifest_config.clone(),
+    );
     manifest_manager.load_latest().await?;
     let manifest = manifest_manager.current().clone();
 
@@ -44,14 +47,9 @@ pub async fn recover<B: StorageBackend>(
         if metas.is_empty() {
             levels.push(LevelState::empty(*level));
         } else {
-            let level_state = LevelState::open_all(
-                *level,
-                metas,
-                namespace,
-                &config.manifest_config,
-                fetcher,
-            )
-            .await?;
+            let level_state =
+                LevelState::open_all(*level, metas, namespace, &config.manifest_config, fetcher)
+                    .await?;
             levels.push(level_state);
         }
     }

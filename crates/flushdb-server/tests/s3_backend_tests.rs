@@ -68,15 +68,11 @@ fn test_prefix_count_validation() {
 
     // Rejects 0
     let result = S3StorageBackend::with_prefix_count(client.clone(), "bucket".to_string(), 0);
-    assert!(matches!(
-        result,
-        Err(FlushError::InvalidArgument { .. })
-    ));
+    assert!(matches!(result, Err(FlushError::InvalidArgument { .. })));
 
     // Rejects non-power-of-2
     for bad in [3, 5, 6, 7] {
-        let result =
-            S3StorageBackend::with_prefix_count(client.clone(), "bucket".to_string(), bad);
+        let result = S3StorageBackend::with_prefix_count(client.clone(), "bucket".to_string(), bad);
         assert!(
             matches!(result, Err(FlushError::InvalidArgument { .. })),
             "expected rejection for prefix_count={}",
@@ -100,10 +96,7 @@ fn test_prefix_count_validation() {
 fn test_empty_bucket_rejected() {
     let client = dummy_client();
     let result = S3StorageBackend::with_prefix_count(client, String::new(), 128);
-    assert!(matches!(
-        result,
-        Err(FlushError::InvalidArgument { .. })
-    ));
+    assert!(matches!(result, Err(FlushError::InvalidArgument { .. })));
 }
 
 #[test]
@@ -131,25 +124,22 @@ fn test_with_custom_prefix_count() {
     let client = dummy_client();
 
     // 1 shard: all keys map to 000/
-    let backend =
-        S3StorageBackend::with_prefix_count(client.clone(), "bucket".to_string(), 1)
-            .expect("1 is valid");
+    let backend = S3StorageBackend::with_prefix_count(client.clone(), "bucket".to_string(), 1)
+        .expect("1 is valid");
     assert!(backend.shard_key("foo").starts_with("000/"));
     assert!(backend.shard_key("bar").starts_with("000/"));
 
     // 64 shards
-    let backend =
-        S3StorageBackend::with_prefix_count(client.clone(), "bucket".to_string(), 64)
-            .expect("64 is valid");
+    let backend = S3StorageBackend::with_prefix_count(client.clone(), "bucket".to_string(), 64)
+        .expect("64 is valid");
     let sharded = backend.shard_key("test-key");
     let prefix_str = sharded.split('/').next().expect("should have prefix");
     let shard_num: u32 = prefix_str.parse().expect("prefix should be numeric");
     assert!(shard_num < 64);
 
     // 256 shards
-    let backend =
-        S3StorageBackend::with_prefix_count(client, "bucket".to_string(), 256)
-            .expect("256 is valid");
+    let backend = S3StorageBackend::with_prefix_count(client, "bucket".to_string(), 256)
+        .expect("256 is valid");
     let sharded = backend.shard_key("test-key");
     let prefix_str = sharded.split('/').next().expect("should have prefix");
     let shard_num: u32 = prefix_str.parse().expect("prefix should be numeric");
@@ -160,7 +150,12 @@ fn test_with_custom_prefix_count() {
 fn test_shard_key_preserves_logical_key() {
     let backend = S3StorageBackend::new(dummy_client(), "test-bucket".to_string());
 
-    let keys = ["simple", "path/with/slashes", "key-with-dashes", "a/b/c/d.sst"];
+    let keys = [
+        "simple",
+        "path/with/slashes",
+        "key-with-dashes",
+        "a/b/c/d.sst",
+    ];
     for key in keys {
         let sharded = backend.shard_key(key);
         assert!(

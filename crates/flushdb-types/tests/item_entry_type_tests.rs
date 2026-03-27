@@ -27,12 +27,7 @@ fn test_item_with_metadata() {
 
 #[test]
 fn test_item_with_all() {
-    let item = Item::with_all(
-        Bytes::from("k"),
-        Bytes::from("v"),
-        Bytes::from("meta"),
-        42,
-    );
+    let item = Item::with_all(Bytes::from("k"), Bytes::from("v"), Bytes::from("meta"), 42);
     assert_eq!(item.key, Bytes::from("k"));
     assert_eq!(item.value, Bytes::from("v"));
     assert_eq!(item.metadata, Bytes::from("meta"));
@@ -61,20 +56,12 @@ fn test_item_inequality() {
     assert_ne!(base, different_value);
 
     // Different metadata
-    let different_meta = Item::with_metadata(
-        Bytes::from("k"),
-        Bytes::from("v"),
-        Bytes::from("meta"),
-    );
+    let different_meta =
+        Item::with_metadata(Bytes::from("k"), Bytes::from("v"), Bytes::from("meta"));
     assert_ne!(base, different_meta);
 
     // Different chunk
-    let different_chunk = Item::with_all(
-        Bytes::from("k"),
-        Bytes::from("v"),
-        Bytes::new(),
-        5,
-    );
+    let different_chunk = Item::with_all(Bytes::from("k"), Bytes::from("v"), Bytes::new(), 5);
     assert_ne!(base, different_chunk);
 }
 
@@ -135,4 +122,3 @@ fn test_item_clone() {
     let cloned = item.clone();
     assert_eq!(item, cloned);
 }
-

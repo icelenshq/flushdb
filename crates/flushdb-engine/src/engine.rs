@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -7,21 +8,23 @@ use flushdb_types::{
     CompositeKey, EntryType, FlushError, FlushResult, IdempotencyToken, MemtableEntry,
     StorageBackend,
 };
-use flushdb_wal::{WalConfig, WalEntry, WalManager};
+use flushdb_wal::{DurabilityNotification, WalConfig, WalEntry, WalManager};
 
 use crate::block_fetcher::{BlockFetcher, DirectBlockFetcher};
 use crate::cache::{
     self, BlockCache, CacheConfig, CacheStats, CachingBlockFetcher, CoalescingFetcher,
     ContinuityTracker, NamespaceSizeEstimator, PinnedMetadataCache, ReadBudget,
 };
-use crate::merge_iterator::MergeEntry;
 use crate::compaction::executor::{CompactionExecutor, CompactionResult};
-use crate::compaction::scheduler::{CompactionConfig, CompactionScheduler, CompactionTask, WriteStallStatus};
+use crate::compaction::scheduler::{
+    CompactionConfig, CompactionScheduler, CompactionTask, WriteStallStatus,
+};
 use crate::flush::{FlushConfig, FlushPipeline, FlushResult_};
 use crate::manifest::manager::ManifestManager;
 use crate::manifest::types::{Level, Manifest, ManifestConfig, ManifestId};
 use crate::memtable::MemtableConfig;
 use crate::memtable_list::MemtableList;
+use crate::merge_iterator::MergeEntry;
 use crate::read_path::{GetResult, RangeReadOptions, RangeReadResult, ReadPath};
 use crate::recovery::{self, RecoveryConfig};
 use crate::sstable_handle::{LevelState, SSTableHandle};
@@ -36,6 +39,14 @@ pub struct EngineConfig {
     pub cache_config: CacheConfig,
     pub namespace: String,
     pub local_dir: PathBuf,
+}
+
+#[derive(Clone, Debug)]
+pub struct PutBatchItem {
+    pub item_key: Bytes,
+    pub value: Bytes,
+    pub metadata: Bytes,
+    pub idempotency_token: IdempotencyToken,
 }
 
 pub struct Engine<B: StorageBackend> {
@@ -64,7 +75,8 @@ impl<B: StorageBackend + Clone + 'static> Engine<B> {
         std::fs::create_dir_all(&wal_dir)?;
 
         let block_cache = BlockCache::new(&config.cache_config);
-        let direct_fetcher: Arc<dyn BlockFetcher> = Arc::new(DirectBlockFetcher::new(backend.clone()));
+        let direct_fetcher: Arc<dyn BlockFetcher> =
+            Arc::new(DirectBlockFetcher::new(backend.clone()));
         let caching_fetcher = CachingBlockFetcher::new(direct_fetcher, block_cache.clone());
         let coalescing_fetcher = CoalescingFetcher::new(caching_fetcher.clone());
         let pinned_metadata = PinnedMetadataCache::new(&config.cache_config);
@@ -86,6 +98,13 @@ impl<B: StorageBackend + Clone + 'static> Engine<B> {
         .await?;
 
         let mut manifest_manager = recovery_result.manifest_manager;
+        eprintln!(
+            "[DEBUG] Engine::open namespace={} l0_count={} total_sst={} manifest_id={}",
+            config.namespace,
+            manifest_manager.current().l0_count(),
+            manifest_manager.current().total_sstable_count(),
+            manifest_manager.current().manifest_id,
+        );
         manifest_manager.acquire_writer_epoch().await?;
 
         let wal_manager = WalManager::open(&wal_dir, config.wal_config.clone())?;
@@ -129,9 +148,10 @@ impl<B: StorageBackend + Clone + 'static> Engine<B> {
     pub async fn close(&mut self) -> FlushResult<()> {
         // Flush active memtable if non-empty
         if self.memtable_list.active_entry_count() > 0 {
-            self.memtable_list.freeze_active()?;
-            self.flush_frozen().await?;
+            self.memtable_list
+                .freeze_active_with_generation(self.generation_counter)?;
             self.generation_counter += 1;
+            self.flush_frozen().await?;
         }
 
         // Flush remaining frozen memtables
@@ -161,7 +181,6 @@ impl<B: StorageBackend + Clone + 'static> Engine<B> {
         self.memtable_list.check_dedup(&token)?;
 
         let seq = self.next_sequence;
-        self.next_sequence += 1;
 
         let entry = MemtableEntry::with_sequence(
             key,
@@ -173,8 +192,13 @@ impl<B: StorageBackend + Clone + 'static> Engine<B> {
         );
 
         let wal_entry = WalEntry::from_memtable_entry(&entry, self.config.namespace.as_bytes());
-        self.wal_manager.append(wal_entry, self.generation_counter).await?;
+        let wal_notification = self
+            .wal_manager
+            .append(wal_entry, self.generation_counter)
+            .await?;
+        Self::await_wal_durability(wal_notification).await?;
 
+        self.next_sequence += 1;
         self.memtable_list.insert(entry)?;
         self.continuity_tracker.invalidate_for_record(record_id);
 
@@ -183,16 +207,92 @@ impl<B: StorageBackend + Clone + 'static> Engine<B> {
         Ok(seq)
     }
 
-    pub async fn delete(
+    pub async fn put_batch(
         &mut self,
         record_id: &[u8],
-        item_key: &[u8],
-    ) -> FlushResult<u64> {
+        items: Vec<PutBatchItem>,
+    ) -> FlushResult<usize> {
+        if items.is_empty() {
+            return Ok(0);
+        }
+
+        self.check_write_stall().await?;
+
+        let mut seen_tokens = HashSet::with_capacity(items.len());
+        let mut entries = Vec::with_capacity(items.len());
+        let mut wal_entries = Vec::with_capacity(items.len());
+        let mut next_seq = self.next_sequence;
+        let namespace = Bytes::copy_from_slice(self.config.namespace.as_bytes());
+        let record_id_bytes = Bytes::copy_from_slice(record_id);
+
+        for item in items {
+            let PutBatchItem {
+                item_key,
+                value,
+                metadata,
+                idempotency_token,
+            } = item;
+
+            if !idempotency_token.is_none() {
+                if !seen_tokens.insert(idempotency_token) {
+                    continue;
+                }
+                match self.memtable_list.check_dedup(&idempotency_token) {
+                    Ok(()) => {}
+                    Err(FlushError::DuplicateToken { .. }) => continue,
+                    Err(e) => return Err(e),
+                }
+            }
+
+            let entry = MemtableEntry::with_sequence(
+                CompositeKey::new(record_id, item_key.as_ref())?,
+                value.clone(),
+                metadata.clone(),
+                idempotency_token,
+                next_seq,
+                EntryType::Put,
+            );
+            next_seq += 1;
+            wal_entries.push(WalEntry {
+                sequence_number: entry.sequence_number,
+                entry_type: EntryType::Put,
+                namespace: namespace.clone(),
+                record_id: record_id_bytes.clone(),
+                item_key,
+                item_value: value,
+                item_metadata: metadata,
+                idempotency_token,
+            });
+            entries.push(entry);
+        }
+
+        if entries.is_empty() {
+            return Ok(0);
+        }
+
+        let inserted_count = entries.len();
+
+        let wal_notification = self
+            .wal_manager
+            .append_batch(wal_entries, self.generation_counter)
+            .await?;
+        Self::await_wal_durability(wal_notification).await?;
+
+        self.next_sequence = next_seq;
+        for entry in entries {
+            self.memtable_list.insert_prechecked(entry)?;
+            self.enforce_batch_memtable_limits().await?;
+        }
+        self.continuity_tracker.invalidate_for_record(record_id);
+
+        Ok(inserted_count)
+    }
+
+    pub async fn delete(&mut self, record_id: &[u8], item_key: &[u8]) -> FlushResult<u64> {
         self.check_write_stall().await?;
 
         let key = CompositeKey::new(record_id, item_key)?;
         let seq = self.next_sequence;
-        self.next_sequence += 1;
 
         let entry = MemtableEntry::with_sequence(
             key,
@@ -204,7 +304,12 @@ impl<B: StorageBackend + Clone + 'static> Engine<B> {
         );
 
         let wal_entry = WalEntry::from_memtable_entry(&entry, self.config.namespace.as_bytes());
-        self.wal_manager.append(wal_entry, self.generation_counter).await?;
+        let wal_notification = self
+            .wal_manager
+            .append(wal_entry, self.generation_counter)
+            .await?;
+        Self::await_wal_durability(wal_notification).await?;
+        self.next_sequence += 1;
         self.memtable_list.insert(entry)?;
         self.continuity_tracker.invalidate_for_record(record_id);
 
@@ -223,7 +328,6 @@ impl<B: StorageBackend + Clone + 'static> Engine<B> {
 
         let key = CompositeKey::range_tombstone_key(record_id, start_key)?;
         let seq = self.next_sequence;
-        self.next_sequence += 1;
 
         let entry = MemtableEntry::with_sequence(
             key,
@@ -235,7 +339,12 @@ impl<B: StorageBackend + Clone + 'static> Engine<B> {
         );
 
         let wal_entry = WalEntry::from_memtable_entry(&entry, self.config.namespace.as_bytes());
-        self.wal_manager.append(wal_entry, self.generation_counter).await?;
+        let wal_notification = self
+            .wal_manager
+            .append(wal_entry, self.generation_counter)
+            .await?;
+        Self::await_wal_durability(wal_notification).await?;
+        self.next_sequence += 1;
         self.memtable_list.insert(entry)?;
         self.continuity_tracker.invalidate_for_record(record_id);
 
@@ -246,14 +355,13 @@ impl<B: StorageBackend + Clone + 'static> Engine<B> {
 
     // --- Read Methods ---
 
-    pub async fn get(
-        &self,
-        record_id: &[u8],
-        item_key: &[u8],
-    ) -> FlushResult<Option<GetResult>> {
+    pub async fn get(&self, record_id: &[u8], item_key: &[u8]) -> FlushResult<Option<GetResult>> {
         let key = CompositeKey::new(record_id, item_key)?;
 
-        if self.continuity_tracker.is_known_absent(record_id, item_key, self.manifest_version()) {
+        if self
+            .continuity_tracker
+            .is_known_absent(record_id, item_key, self.manifest_version())
+        {
             return Ok(None);
         }
 
@@ -362,9 +470,13 @@ impl<B: StorageBackend + Clone + 'static> Engine<B> {
 
     pub async fn run_maintenance(&mut self) -> FlushResult<()> {
         if self.memtable_list.active_entry_count() > 0
-            && self.memtable_list.active().should_freeze_by_age(self.config.flush_config.flush_trigger_age)
+            && self
+                .memtable_list
+                .active()
+                .should_freeze_by_age(self.config.flush_config.flush_trigger_age)
         {
-            self.memtable_list.freeze_active()?;
+            self.memtable_list
+                .freeze_active_with_generation(self.generation_counter)?;
             self.generation_counter += 1;
         }
 
@@ -389,13 +501,13 @@ impl<B: StorageBackend + Clone + 'static> Engine<B> {
     }
 
     async fn flush_frozen(&mut self) -> FlushResult<FlushResult_> {
-        let frozen = self.memtable_list.pop_oldest_frozen().ok_or_else(|| {
-            FlushError::InvalidArgument {
+        let (generation_id, frozen) = self
+            .memtable_list
+            .pop_oldest_frozen_with_generation()
+            .ok_or_else(|| FlushError::InvalidArgument {
                 message: "no frozen memtables to flush".into(),
-            }
-        })?;
+            })?;
 
-        let generation_id = self.generation_counter;
         let backend = self.manifest_manager.backend().clone();
 
         let result = self
@@ -404,16 +516,18 @@ impl<B: StorageBackend + Clone + 'static> Engine<B> {
             .await?;
 
         // WAL cleanup
-        let deletable = self
-            .wal_manager
-            .mark_generation_flushed(generation_id)?;
+        let deletable = self.wal_manager.mark_generation_flushed(generation_id)?;
         self.wal_manager.cleanup_segments(&deletable)?;
 
         let meta = result.sst_meta.clone();
         let path = meta.sst_path(&self.config.namespace, Level::L0);
         let handle = SSTableHandle::open_with_cache(
-            meta, path, &self.caching_fetcher, &mut self.pinned_metadata,
-        ).await?;
+            meta,
+            path,
+            &self.caching_fetcher,
+            &mut self.pinned_metadata,
+        )
+        .await?;
 
         // Add to L0 level state
         if self.levels.is_empty() {
@@ -447,7 +561,12 @@ impl<B: StorageBackend + Clone + 'static> Engine<B> {
         let backend = self.manifest_manager.backend().clone();
         let result = self
             .compaction_executor
-            .execute(&task, &mut self.manifest_manager, &self.caching_fetcher, &backend)
+            .execute(
+                &task,
+                &mut self.manifest_manager,
+                &self.caching_fetcher,
+                &backend,
+            )
             .await?;
 
         self.pending_deletions
@@ -457,7 +576,8 @@ impl<B: StorageBackend + Clone + 'static> Engine<B> {
 
         cache::evict_compaction_result(&self.block_cache, &mut self.pinned_metadata, &result);
         let new_manifest_id = self.manifest_version();
-        self.continuity_tracker.invalidate_before_manifest(new_manifest_id);
+        self.continuity_tracker
+            .invalidate_before_manifest(new_manifest_id);
 
         Ok(result)
     }
@@ -475,14 +595,21 @@ impl<B: StorageBackend + Clone + 'static> Engine<B> {
                 for meta in metas {
                     let path = meta.sst_path(&self.config.namespace, *level);
                     let handle = SSTableHandle::open_with_cache(
-                        meta.clone(), path, &self.caching_fetcher, &mut self.pinned_metadata,
-                    ).await?;
+                        meta.clone(),
+                        path,
+                        &self.caching_fetcher,
+                        &mut self.pinned_metadata,
+                    )
+                    .await?;
                     handles.push(handle);
                 }
                 if !level.is_overlapping() {
                     handles.sort_by(|a, b| a.meta.min_key.cmp(&b.meta.min_key));
                 }
-                self.levels.push(LevelState { level: *level, handles });
+                self.levels.push(LevelState {
+                    level: *level,
+                    handles,
+                });
             }
         }
 
@@ -572,6 +699,15 @@ impl<B: StorageBackend + Clone + 'static> Engine<B> {
 
     async fn check_write_stall(&self) -> FlushResult<()> {
         let status = self.write_stall_status();
+        if status.is_stopped() {
+            eprintln!(
+                "[DEBUG] check_write_stall STOPPED namespace={} l0_count={} manifest_l0_count={} manifest_id={}",
+                self.config.namespace,
+                status.l0_count(),
+                self.manifest_manager.current().l0_count(),
+                self.manifest_manager.current().manifest_id,
+            );
+        }
         match status {
             WriteStallStatus::Normal => {}
             WriteStallStatus::Slowdown { delay_ms, .. } => {
@@ -609,10 +745,47 @@ impl<B: StorageBackend + Clone + 'static> Engine<B> {
                 .active()
                 .should_freeze_by_age(self.config.flush_config.flush_trigger_age)
         {
-            self.memtable_list.freeze_active()?;
+            self.memtable_list
+                .freeze_active_with_generation(self.generation_counter)?;
+            self.generation_counter += 1;
             self.flush_frozen().await?;
+        }
+        Ok(())
+    }
+
+    async fn enforce_batch_memtable_limits(&mut self) -> FlushResult<()> {
+        let should_freeze_active = self.memtable_list.active_entry_count() > 0
+            && (self.memtable_list.active().should_freeze_by_size()
+                || self
+                    .memtable_list
+                    .active()
+                    .should_freeze_by_age(self.config.flush_config.flush_trigger_age)
+                || self.memtable_list.is_memory_backpressured());
+
+        if should_freeze_active {
+            self.memtable_list
+                .freeze_active_with_generation(self.generation_counter)?;
             self.generation_counter += 1;
         }
+
+        let mut should_flush = should_freeze_active;
+        while self.memtable_list.has_frozen()
+            && (should_flush || self.memtable_list.is_memory_backpressured())
+        {
+            self.flush_frozen().await?;
+            should_flush = false;
+        }
+
+        Ok(())
+    }
+
+    async fn await_wal_durability(notification: DurabilityNotification) -> FlushResult<()> {
+        notification.await.map_err(|_| {
+            FlushError::Io(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "WAL durability notification channel closed",
+            ))
+        })??;
         Ok(())
     }
 }

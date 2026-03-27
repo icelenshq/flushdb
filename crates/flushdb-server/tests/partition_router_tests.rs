@@ -134,7 +134,10 @@ fn test_composite_different_prefix_can_differ() {
     assert!(p1 < 256);
     assert!(p2 < 256);
     // In practice these hash to different values, so let's also verify that.
-    assert_ne!(p1, p2, "different composite keys should likely route differently");
+    assert_ne!(
+        p1, p2,
+        "different composite keys should likely route differently"
+    );
 }
 
 #[test]
@@ -275,6 +278,8 @@ fn test_router_as_trait_object() {
     let config = simple_config(16);
     let router = LocalPartitionRouter::new(&config);
     let dyn_router: &dyn PartitionRouter = &router;
-    let partition = dyn_router.route("trait-object-key").expect("route succeeds");
+    let partition = dyn_router
+        .route("trait-object-key")
+        .expect("route succeeds");
     assert!(partition < 16);
 }

@@ -1,12 +1,10 @@
 use bytes::Bytes;
 use flushdb_engine::memtable::MemtableConfig;
 use flushdb_engine::read_path::{
-    GetResult, PageToken, RangeTombstoneCollector, RangeReadOptions, ReadPath,
+    GetResult, PageToken, RangeReadOptions, RangeTombstoneCollector, ReadPath,
 };
-use flushdb_engine::{DirectBlockFetcher, MergeEntry, MemtableList};
-use flushdb_types::{
-    CompositeKey, EntryType, IdempotencyToken, LocalFsBackend, MemtableEntry,
-};
+use flushdb_engine::{DirectBlockFetcher, MemtableList, MergeEntry};
+use flushdb_types::{CompositeKey, EntryType, IdempotencyToken, LocalFsBackend, MemtableEntry};
 
 fn make_put(record: &str, key: &str, value: &str) -> MemtableEntry {
     MemtableEntry::new(
@@ -303,7 +301,10 @@ async fn test_range_read_item_limit() {
 
     assert_eq!(result.entries.len(), 3);
     assert!(result.next_page_token.is_some());
-    assert!(result.is_partial, "paginated result should be marked partial");
+    assert!(
+        result.is_partial,
+        "paginated result should be marked partial"
+    );
 }
 
 #[tokio::test]
@@ -324,7 +325,10 @@ async fn test_range_read_is_partial_false_when_complete() {
 
     assert_eq!(result.entries.len(), 3);
     assert!(result.next_page_token.is_none());
-    assert!(!result.is_partial, "complete result should not be marked partial");
+    assert!(
+        !result.is_partial,
+        "complete result should not be marked partial"
+    );
 }
 
 #[tokio::test]
@@ -379,10 +383,7 @@ async fn test_multi_get_mixed_hits_and_misses() {
     list.insert(make_put("r1", "c", "vc")).unwrap();
 
     let keys: Vec<&[u8]> = vec![b"a", b"b", b"c"];
-    let results = read_path
-        .multi_get(b"r1", &keys, &list, &[])
-        .await
-        .unwrap();
+    let results = read_path.multi_get(b"r1", &keys, &list, &[]).await.unwrap();
 
     assert_eq!(results.len(), 3);
     assert!(results[0].is_some());

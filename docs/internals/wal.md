@@ -80,13 +80,15 @@ Individual fsync per write is expensive. The WAL batches writes:
 ┌───────────────────────┐   ┌──────────────┐   ┌────────────┐
 │ Write 1               │   │              │   │            │
 │ Write 2    → buffer   │──►│   fsync()    │──►│  ACK all   │
-│ Write 3               │   │              │   │  clients   │
-│ Write 4               │   │              │   │            │
+│ Batch [3,4,5]         │   │              │   │  clients   │
+│ Write 6               │   │              │   │            │
 └───────────────────────┘   └──────────────┘   └────────────┘
  Trigger: 200μs or 256KB
 ```
 
-Writes are appended to a buffer and inserted into the memtable immediately but **not ACK'd** until the buffer is fsynced. Every 200μs or 256KB (whichever comes first), the batch is fsynced and all writes in it are ACK'd simultaneously. Under sustained load, hundreds of writes share a single fsync — **5-10x throughput improvement**.
+The group commit loop accepts both single writes and **batch submissions**. A `PutItems` with multiple items submits all its WAL entries as a single batch unit, sharing one durability notification. Single writes and batch writes are combined together in the same commit window.
+
+Writes are appended to a buffer but **not ACK'd** until the buffer is fsynced. The engine awaits a `DurabilityNotification` before incrementing sequence numbers or inserting into the memtable — this prevents sequence gaps on failure. Every 200μs or 256KB (whichever comes first), the batch is fsynced and all writes in it are ACK'd simultaneously. Under sustained load, hundreds of writes share a single fsync — **5-10x throughput improvement**.
 
 The commit interval is configurable down to 50μs for latency-sensitive namespaces.
 
@@ -96,6 +98,8 @@ Two fsync modes per namespace:
 |------|----------|------------|---------|
 | `SYNC` (default) | fsync after every batch | Survives power loss | ~0.5-2ms |
 | `BATCH_SYNC` | fsync on 10ms timer | May lose last 10ms | ~50-100μs |
+
+The `batch_sync_interval` / `wal_batch_sync_interval_ms` timer must be configured with a positive value. `0` is rejected during config validation.
 
 ## Dirty Segment Tracking
 

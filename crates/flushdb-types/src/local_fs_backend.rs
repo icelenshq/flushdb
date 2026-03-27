@@ -34,12 +34,12 @@ impl StorageBackend for LocalFsBackend {
         }
 
         // Atomic write: write to a temp file in the same directory, then rename.
-        let parent = path
-            .parent()
-            .ok_or_else(|| FlushError::Io(std::io::Error::new(
+        let parent = path.parent().ok_or_else(|| {
+            FlushError::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "key resolves to a path with no parent directory",
-            )))?;
+            ))
+        })?;
 
         let temp_path = parent.join(format!(".tmp.{}", uuid::Uuid::now_v7()));
         tokio::fs::write(&temp_path, &value).await?;
@@ -56,11 +56,9 @@ impl StorageBackend for LocalFsBackend {
 
         match tokio::fs::read(&path).await {
             Ok(data) => Ok(Bytes::from(data)),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                Err(FlushError::NotFound {
-                    key: key.to_string(),
-                })
-            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(FlushError::NotFound {
+                key: key.to_string(),
+            }),
             Err(e) => Err(e.into()),
         }
     }
@@ -163,9 +161,10 @@ impl StorageBackend for LocalFsBackend {
         })
         .await
         .map_err(|e| {
-            FlushError::Io(std::io::Error::other(
-                format!("spawn_blocking join error: {}", e),
-            ))
+            FlushError::Io(std::io::Error::other(format!(
+                "spawn_blocking join error: {}",
+                e
+            )))
         })?
     }
 

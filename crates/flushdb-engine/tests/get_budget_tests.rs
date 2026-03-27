@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -134,7 +134,13 @@ async fn test_cache_hit_does_not_consume_budget() {
     // Now use budgeted fetch — should hit cache, budget stays at 0 used
     let mut budget = ReadBudget::new(5);
     let entries = caching
-        .fetch_block_budgeted("data/L0/sst-1.sst", 0, 4096, CompressionType::None, &mut budget)
+        .fetch_block_budgeted(
+            "data/L0/sst-1.sst",
+            0,
+            4096,
+            CompressionType::None,
+            &mut budget,
+        )
         .await
         .expect("budgeted fetch with cache hit should succeed");
 
@@ -155,7 +161,13 @@ async fn test_cache_miss_consumes_budget() {
 
     let mut budget = ReadBudget::new(5);
     let entries = caching
-        .fetch_block_budgeted("data/L0/sst-1.sst", 0, 4096, CompressionType::None, &mut budget)
+        .fetch_block_budgeted(
+            "data/L0/sst-1.sst",
+            0,
+            4096,
+            CompressionType::None,
+            &mut budget,
+        )
         .await
         .expect("budgeted fetch with cache miss should succeed");
 
@@ -174,14 +186,26 @@ async fn test_budget_exhausted_returns_error() {
 
     // First fetch succeeds — uses the single budget unit
     caching
-        .fetch_block_budgeted("data/L0/sst-1.sst", 0, 4096, CompressionType::None, &mut budget)
+        .fetch_block_budgeted(
+            "data/L0/sst-1.sst",
+            0,
+            4096,
+            CompressionType::None,
+            &mut budget,
+        )
         .await
         .expect("first budgeted fetch should succeed");
     assert_eq!(budget.used(), 1);
 
     // Second fetch to a different block should fail — budget exhausted
     let result = caching
-        .fetch_block_budgeted("data/L0/sst-1.sst", 4096, 4096, CompressionType::None, &mut budget)
+        .fetch_block_budgeted(
+            "data/L0/sst-1.sst",
+            4096,
+            4096,
+            CompressionType::None,
+            &mut budget,
+        )
         .await;
 
     assert!(result.is_err());

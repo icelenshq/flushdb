@@ -67,9 +67,7 @@ async fn test_get_namespace_config() {
     let mgr = test_manager(tmp.path()).await;
 
     let config = test_config("ns-1");
-    mgr.create_namespace(config.clone())
-        .await
-        .expect("create");
+    mgr.create_namespace(config.clone()).await.expect("create");
 
     let retrieved = mgr.get_namespace_config("ns-1").expect("get config");
     assert_eq!(retrieved.name, "ns-1");
@@ -88,9 +86,12 @@ async fn test_update_mutable_fields() {
     let mut updated = mgr.get_namespace_config("ns-1").expect("get config");
     updated.memtable_size_threshold = 128 * 1024 * 1024;
 
-    mgr.update_namespace_config(updated).expect("update should succeed");
+    mgr.update_namespace_config(updated)
+        .expect("update should succeed");
 
-    let retrieved = mgr.get_namespace_config("ns-1").expect("get config after update");
+    let retrieved = mgr
+        .get_namespace_config("ns-1")
+        .expect("get config after update");
     assert_eq!(retrieved.memtable_size_threshold, 128 * 1024 * 1024);
 }
 
@@ -147,10 +148,7 @@ async fn test_delete_nonexistent_rejected() {
 
     match &err {
         FlushError::NotFound { key } => {
-            assert!(
-                key.contains("namespace: nope"),
-                "unexpected key: {key}"
-            );
+            assert!(key.contains("namespace: nope"), "unexpected key: {key}");
         }
         other => panic!("expected NotFound, got: {other:?}"),
     }
@@ -412,29 +410,23 @@ async fn test_delete_range() {
         .await
         .expect("delete_range should succeed");
 
-    let result_a = mgr
-        .get("ns-1", "record-1", b"key-a")
-        .await
-        .expect("get a");
-    assert!(result_a.is_some(), "key-a should still exist (before range)");
+    let result_a = mgr.get("ns-1", "record-1", b"key-a").await.expect("get a");
+    assert!(
+        result_a.is_some(),
+        "key-a should still exist (before range)"
+    );
 
-    let result_b = mgr
-        .get("ns-1", "record-1", b"key-b")
-        .await
-        .expect("get b");
+    let result_b = mgr.get("ns-1", "record-1", b"key-b").await.expect("get b");
     assert!(result_b.is_none(), "key-b should be deleted (in range)");
 
-    let result_c = mgr
-        .get("ns-1", "record-1", b"key-c")
-        .await
-        .expect("get c");
+    let result_c = mgr.get("ns-1", "record-1", b"key-c").await.expect("get c");
     assert!(result_c.is_none(), "key-c should be deleted (in range)");
 
-    let result_d = mgr
-        .get("ns-1", "record-1", b"key-d")
-        .await
-        .expect("get d");
-    assert!(result_d.is_some(), "key-d should still exist (at exclusive end)");
+    let result_d = mgr.get("ns-1", "record-1", b"key-d").await.expect("get d");
+    assert!(
+        result_d.is_some(),
+        "key-d should still exist (at exclusive end)"
+    );
 }
 
 // ─── Multi Get Tests ───
@@ -474,17 +466,27 @@ async fn test_multi_get() {
         .multi_get(
             "ns-1",
             "record-1",
-            &[b"key-a".as_slice(), b"key-b".as_slice(), b"key-c".as_slice()],
+            &[
+                b"key-a".as_slice(),
+                b"key-b".as_slice(),
+                b"key-c".as_slice(),
+            ],
         )
         .await
         .expect("multi_get should succeed");
 
     assert_eq!(results.len(), 3);
     assert!(results[0].is_some(), "key-a should be found");
-    assert_eq!(results[0].as_ref().unwrap().value, Bytes::from_static(b"val-a"));
+    assert_eq!(
+        results[0].as_ref().unwrap().value,
+        Bytes::from_static(b"val-a")
+    );
     assert!(results[1].is_none(), "key-b should not be found");
     assert!(results[2].is_some(), "key-c should be found");
-    assert_eq!(results[2].as_ref().unwrap().value, Bytes::from_static(b"val-c"));
+    assert_eq!(
+        results[2].as_ref().unwrap().value,
+        Bytes::from_static(b"val-c")
+    );
 }
 
 // ─── Flush All Tests ───
@@ -520,8 +522,15 @@ async fn test_next_version() {
     let mgr = test_manager(tmp.path()).await;
 
     let version = mgr.next_version();
-    assert_eq!(version.node_id(), 0, "node_id should match the one passed to VersionGenerator");
-    assert!(version.timestamp_ms() > 0, "timestamp should be a positive value");
+    assert_eq!(
+        version.node_id(),
+        0,
+        "node_id should match the one passed to VersionGenerator"
+    );
+    assert!(
+        version.timestamp_ms() > 0,
+        "timestamp should be a positive value"
+    );
 }
 
 // ─── Config Error Tests ───
@@ -681,9 +690,7 @@ async fn test_namespace_count() {
         .expect("create ns-2");
     assert_eq!(mgr.namespace_count(), 2);
 
-    mgr.delete_namespace("ns-1")
-        .await
-        .expect("delete ns-1");
+    mgr.delete_namespace("ns-1").await.expect("delete ns-1");
     assert_eq!(mgr.namespace_count(), 1);
 }
 

@@ -100,11 +100,8 @@ impl WalWriter {
         self.current_writer.sync()?;
 
         let new_seg_num = self.current_writer.segment_number() + 1;
-        let new_writer = SegmentWriter::create(
-            &self.partition_dir,
-            new_seg_num,
-            self.next_sequence_number,
-        )?;
+        let new_writer =
+            SegmentWriter::create(&self.partition_dir, new_seg_num, self.next_sequence_number)?;
 
         self.current_writer = new_writer;
         self.segment_numbers.push(new_seg_num);

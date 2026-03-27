@@ -1,6 +1,4 @@
-use flushdb_types::{
-    CompositeKey, FlushError, FlushResult, IdempotencyToken, StorageBackend,
-};
+use flushdb_types::{CompositeKey, FlushError, FlushResult, IdempotencyToken, StorageBackend};
 
 use super::block_reader::{decode_block, BlockEntry};
 use super::bloom_filter::FilterBlock;
@@ -65,7 +63,11 @@ impl<B: StorageBackend> SSTableReader<B> {
         let dedup_offset = self.footer.dedup_block_offset();
         let dedup_bytes = self
             .backend
-            .get_range(&self.path, dedup_offset, self.footer.dedup_block_size as u64)
+            .get_range(
+                &self.path,
+                dedup_offset,
+                self.footer.dedup_block_size as u64,
+            )
             .await?;
         self.dedup = Some(DedupBlock::deserialize(&dedup_bytes)?);
 
@@ -98,23 +100,26 @@ impl<B: StorageBackend> SSTableReader<B> {
 
         let entries = decode_block(&raw, self.footer.compression_type)?;
 
-        Ok(entries
-            .into_iter()
-            .find(|e| e.composite_key == *key))
+        Ok(entries.into_iter().find(|e| e.composite_key == *key))
     }
 
     pub async fn get_block(&self, block_index: usize) -> FlushResult<Vec<BlockEntry>> {
-        let index = self.index.as_ref().ok_or_else(|| FlushError::InvalidArgument {
-            message: "SSTable metadata not loaded — call load_metadata() first".into(),
-        })?;
+        let index = self
+            .index
+            .as_ref()
+            .ok_or_else(|| FlushError::InvalidArgument {
+                message: "SSTable metadata not loaded — call load_metadata() first".into(),
+            })?;
 
-        let entry = index.get(block_index).ok_or_else(|| FlushError::InvalidArgument {
-            message: format!(
-                "block index {} out of range (0..{})",
-                block_index,
-                index.block_count()
-            ),
-        })?;
+        let entry = index
+            .get(block_index)
+            .ok_or_else(|| FlushError::InvalidArgument {
+                message: format!(
+                    "block index {} out of range (0..{})",
+                    block_index,
+                    index.block_count()
+                ),
+            })?;
 
         let raw = self
             .backend
@@ -139,7 +144,8 @@ impl<B: StorageBackend> SSTableReader<B> {
             // Optimization: check if we can stop early
             if let Some(end_key) = end {
                 if let Some(next_entry) = index.get(block_idx) {
-                    if block_idx > start_idx && next_entry.first_key.as_bytes() >= end_key.as_bytes()
+                    if block_idx > start_idx
+                        && next_entry.first_key.as_bytes() >= end_key.as_bytes()
                     {
                         break;
                     }
@@ -165,16 +171,22 @@ impl<B: StorageBackend> SSTableReader<B> {
     }
 
     pub fn contains_record(&self, record_id: &[u8]) -> FlushResult<bool> {
-        let filter = self.filter.as_ref().ok_or_else(|| FlushError::InvalidArgument {
-            message: "SSTable metadata not loaded — call load_metadata() first".into(),
-        })?;
+        let filter = self
+            .filter
+            .as_ref()
+            .ok_or_else(|| FlushError::InvalidArgument {
+                message: "SSTable metadata not loaded — call load_metadata() first".into(),
+            })?;
         Ok(filter.maybe_contains(record_id))
     }
 
     pub fn check_dedup(&self, token: &IdempotencyToken) -> FlushResult<bool> {
-        let dedup = self.dedup.as_ref().ok_or_else(|| FlushError::InvalidArgument {
-            message: "SSTable metadata not loaded — call load_metadata() first".into(),
-        })?;
+        let dedup = self
+            .dedup
+            .as_ref()
+            .ok_or_else(|| FlushError::InvalidArgument {
+                message: "SSTable metadata not loaded — call load_metadata() first".into(),
+            })?;
         Ok(dedup.contains(token))
     }
 
@@ -183,9 +195,12 @@ impl<B: StorageBackend> SSTableReader<B> {
     }
 
     pub fn key_range(&self) -> FlushResult<Option<(&CompositeKey, &CompositeKey)>> {
-        let index = self.index.as_ref().ok_or_else(|| FlushError::InvalidArgument {
-            message: "SSTable metadata not loaded — call load_metadata() first".into(),
-        })?;
+        let index = self
+            .index
+            .as_ref()
+            .ok_or_else(|| FlushError::InvalidArgument {
+                message: "SSTable metadata not loaded — call load_metadata() first".into(),
+            })?;
         Ok(index.key_range())
     }
 
@@ -202,19 +217,28 @@ impl<B: StorageBackend> SSTableReader<B> {
     }
 
     pub fn block_count(&self) -> FlushResult<usize> {
-        let index = self.index.as_ref().ok_or_else(|| FlushError::InvalidArgument {
-            message: "SSTable metadata not loaded — call load_metadata() first".into(),
-        })?;
+        let index = self
+            .index
+            .as_ref()
+            .ok_or_else(|| FlushError::InvalidArgument {
+                message: "SSTable metadata not loaded — call load_metadata() first".into(),
+            })?;
         Ok(index.block_count())
     }
 
     fn require_metadata(&self) -> FlushResult<(&FilterBlock, &IndexBlock)> {
-        let filter = self.filter.as_ref().ok_or_else(|| FlushError::InvalidArgument {
-            message: "SSTable metadata not loaded — call load_metadata() first".into(),
-        })?;
-        let index = self.index.as_ref().ok_or_else(|| FlushError::InvalidArgument {
-            message: "SSTable metadata not loaded — call load_metadata() first".into(),
-        })?;
+        let filter = self
+            .filter
+            .as_ref()
+            .ok_or_else(|| FlushError::InvalidArgument {
+                message: "SSTable metadata not loaded — call load_metadata() first".into(),
+            })?;
+        let index = self
+            .index
+            .as_ref()
+            .ok_or_else(|| FlushError::InvalidArgument {
+                message: "SSTable metadata not loaded — call load_metadata() first".into(),
+            })?;
         Ok((filter, index))
     }
 }

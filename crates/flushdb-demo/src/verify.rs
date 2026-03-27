@@ -190,10 +190,8 @@ async fn check_seeded_data(
                     if actual_value != &expected.value {
                         this_integrity_ok = false;
                         if first_failures.len() < 5 {
-                            let key_str =
-                                String::from_utf8(expected.key.clone()).unwrap_or_else(|_| {
-                                    format!("<{} bytes>", expected.key.len())
-                                });
+                            let key_str = String::from_utf8(expected.key.clone())
+                                .unwrap_or_else(|_| format!("<{} bytes>", expected.key.len()));
                             first_failures.push(format!(
                                 "product {} key '{}': value mismatch (expected {} bytes, got {} bytes)",
                                 product_id,
@@ -232,7 +230,10 @@ async fn check_seeded_data(
         } else {
             schema_fail += 1;
             if first_failures.len() < 5 {
-                first_failures.push(format!("product {} schema: invalid JSON fields", product_id));
+                first_failures.push(format!(
+                    "product {} schema: invalid JSON fields",
+                    product_id
+                ));
             }
         }
 
@@ -242,7 +243,10 @@ async fn check_seeded_data(
     }
 
     results.push(if presence_fail == 0 {
-        CheckResult::pass(format!("presence: {}/{} products have required keys", presence_ok, sample_size))
+        CheckResult::pass(format!(
+            "presence: {}/{} products have required keys",
+            presence_ok, sample_size
+        ))
     } else {
         CheckResult::fail(
             format!("presence: {}/{} passed", presence_ok, sample_size),
@@ -251,7 +255,10 @@ async fn check_seeded_data(
     });
 
     results.push(if count_fail == 0 {
-        CheckResult::pass(format!("item-count: {}/{} products match expected count", count_ok, sample_size))
+        CheckResult::pass(format!(
+            "item-count: {}/{} products match expected count",
+            count_ok, sample_size
+        ))
     } else {
         CheckResult::fail(
             format!("item-count: {}/{} passed", count_ok, sample_size),
@@ -294,7 +301,9 @@ async fn check_seeded_data(
 }
 
 /// Deduplicate items by key, keeping the last occurrence (last-write-wins).
-fn dedup_last_write_wins(items: Vec<flushdb_proto::flushdb::v1::Item>) -> Vec<flushdb_proto::flushdb::v1::Item> {
+fn dedup_last_write_wins(
+    items: Vec<flushdb_proto::flushdb::v1::Item>,
+) -> Vec<flushdb_proto::flushdb::v1::Item> {
     let mut seen = HashMap::new();
     for (i, item) in items.into_iter().enumerate() {
         seen.insert(item.key.clone(), (i, item));
@@ -330,10 +339,9 @@ fn validate_json_schema(items: &HashMap<Vec<u8>, Vec<u8>>) -> bool {
                 return false;
             }
             // original_cents >= current_cents
-            if let (Some(curr), Some(orig)) = (
-                v["current_cents"].as_u64(),
-                v["original_cents"].as_u64(),
-            ) {
+            if let (Some(curr), Some(orig)) =
+                (v["current_cents"].as_u64(), v["original_cents"].as_u64())
+            {
                 if orig < curr {
                     return false;
                 }
@@ -487,10 +495,7 @@ async fn check_delete_correctness(client: &mut DemoClient, namespace: &str) -> C
     let gen = ProductGenerator::new(42);
     let items = gen.generate_product(8888);
 
-    if let Err(e) = client
-        .put_product(namespace, record_id, items)
-        .await
-    {
+    if let Err(e) = client.put_product(namespace, record_id, items).await {
         return CheckResult::fail("delete-correctness", format!("put failed: {}", e));
     }
 
@@ -522,10 +527,7 @@ async fn check_delete_correctness(client: &mut DemoClient, namespace: &str) -> C
             } else {
                 CheckResult::fail(
                     "delete-correctness",
-                    format!(
-                        "{} items still present after delete",
-                        resp.items.len()
-                    ),
+                    format!("{} items still present after delete", resp.items.len()),
                 )
             }
         }
@@ -551,10 +553,7 @@ async fn check_scan_correctness(client: &mut DemoClient, namespace: &str) -> Che
         .map(|item| (item.key.clone(), item.value.clone()))
         .collect();
 
-    if let Err(e) = client
-        .put_product(namespace, record_id, items)
-        .await
-    {
+    if let Err(e) = client.put_product(namespace, record_id, items).await {
         return CheckResult::fail("scan-correctness", format!("put failed: {}", e));
     }
 
@@ -637,10 +636,7 @@ async fn check_selective_get(client: &mut DemoClient, namespace: &str) -> CheckR
         .value
         .clone();
 
-    if let Err(e) = client
-        .put_product(namespace, record_id, items)
-        .await
-    {
+    if let Err(e) = client.put_product(namespace, record_id, items).await {
         return CheckResult::fail("selective-get", format!("put failed: {}", e));
     }
 
@@ -670,10 +666,7 @@ async fn check_selective_get(client: &mut DemoClient, namespace: &str) -> CheckR
     if actual.len() != 2 {
         return CheckResult::fail(
             "selective-get",
-            format!(
-                "requested 2 keys (info, price), got {} items",
-                actual.len()
-            ),
+            format!("requested 2 keys (info, price), got {} items", actual.len()),
         );
     }
 
@@ -693,10 +686,7 @@ async fn check_overwrite(client: &mut DemoClient, namespace: &str) -> CheckResul
 
     // Write product 1111
     let items_v1 = gen.generate_product(1111);
-    if let Err(e) = client
-        .put_product(namespace, record_id, items_v1)
-        .await
-    {
+    if let Err(e) = client.put_product(namespace, record_id, items_v1).await {
         return CheckResult::fail("overwrite", format!("first put failed: {}", e));
     }
 

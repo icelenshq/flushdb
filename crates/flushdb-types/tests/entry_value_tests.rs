@@ -78,4 +78,3 @@ fn test_inequality_across_variants() {
     };
     assert_ne!(inline, blob_ref);
 }
-

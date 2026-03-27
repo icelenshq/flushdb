@@ -67,7 +67,14 @@ fn test_entry_with_empty_value() {
     let mut builder = BlockBuilder::new(4096);
     let key = make_key(b"rec1", b"item1");
 
-    builder.add_entry(&key, &[], b"meta", EntryType::Delete, 1, IdempotencyToken::none());
+    builder.add_entry(
+        &key,
+        &[],
+        b"meta",
+        EntryType::Delete,
+        1,
+        IdempotencyToken::none(),
+    );
 
     let finished = builder.finish(CompressionType::None).unwrap();
     assert_eq!(finished.entry_count, 1);
@@ -82,14 +89,24 @@ fn test_entry_with_empty_metadata() {
     let mut builder = BlockBuilder::new(4096);
     let key = make_key(b"rec1", b"item1");
 
-    builder.add_entry(&key, b"value", &[], EntryType::Put, 1, IdempotencyToken::none());
+    builder.add_entry(
+        &key,
+        b"value",
+        &[],
+        EntryType::Put,
+        1,
+        IdempotencyToken::none(),
+    );
 
     let finished = builder.finish(CompressionType::None).unwrap();
     assert_eq!(finished.entry_count, 1);
 
     let entries = decode_block(&finished.data, CompressionType::None).unwrap();
     assert!(entries[0].metadata.is_empty());
-    assert_eq!(entries[0].value, EntryValue::Inline(bytes::Bytes::from_static(b"value")));
+    assert_eq!(
+        entries[0].value,
+        EntryValue::Inline(bytes::Bytes::from_static(b"value"))
+    );
 }
 
 #[test]
@@ -145,8 +162,22 @@ fn test_first_entry_always_full_record_id() {
     let key1 = make_key(b"shared_record", b"item1");
     let key2 = make_key(b"shared_record", b"item2");
 
-    builder.add_entry(&key1, b"v", &[], EntryType::Put, 1, IdempotencyToken::none());
-    builder.add_entry(&key2, b"v", &[], EntryType::Put, 2, IdempotencyToken::none());
+    builder.add_entry(
+        &key1,
+        b"v",
+        &[],
+        EntryType::Put,
+        1,
+        IdempotencyToken::none(),
+    );
+    builder.add_entry(
+        &key2,
+        b"v",
+        &[],
+        EntryType::Put,
+        2,
+        IdempotencyToken::none(),
+    );
 
     let finished = builder.finish(CompressionType::None).unwrap();
     let entries = decode_block(&finished.data, CompressionType::None).unwrap();
@@ -313,14 +344,7 @@ fn test_is_full_at_target() {
 fn test_is_full_below_target() {
     let mut builder = BlockBuilder::new(4096);
     let key = make_key(b"r", b"k");
-    builder.add_entry(
-        &key,
-        b"v",
-        &[],
-        EntryType::Put,
-        1,
-        IdempotencyToken::none(),
-    );
+    builder.add_entry(&key, b"v", &[], EntryType::Put, 1, IdempotencyToken::none());
     assert!(!builder.is_full());
 }
 
@@ -396,7 +420,11 @@ fn test_finish_compression_snappy() {
 
     let payload = &decompressed[..decompressed.len() - 4];
     let stored_crc = u32::from_le_bytes(decompressed[decompressed.len() - 4..].try_into().unwrap());
-    assert_eq!(crc32fast::hash(payload), stored_crc, "CRC must match payload");
+    assert_eq!(
+        crc32fast::hash(payload),
+        stored_crc,
+        "CRC must match payload"
+    );
 }
 
 #[test]
@@ -423,7 +451,11 @@ fn test_finish_compression_zstd() {
 
     let payload = &decompressed[..decompressed.len() - 4];
     let stored_crc = u32::from_le_bytes(decompressed[decompressed.len() - 4..].try_into().unwrap());
-    assert_eq!(crc32fast::hash(payload), stored_crc, "CRC must match payload");
+    assert_eq!(
+        crc32fast::hash(payload),
+        stored_crc,
+        "CRC must match payload"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -457,9 +489,15 @@ fn test_record_ids_collected() {
 
     let finished = builder.finish(CompressionType::None).unwrap();
     assert_eq!(finished.record_ids.len(), 3);
-    assert!(finished.record_ids.contains(&bytes::Bytes::from_static(b"rec_a")));
-    assert!(finished.record_ids.contains(&bytes::Bytes::from_static(b"rec_b")));
-    assert!(finished.record_ids.contains(&bytes::Bytes::from_static(b"rec_c")));
+    assert!(finished
+        .record_ids
+        .contains(&bytes::Bytes::from_static(b"rec_a")));
+    assert!(finished
+        .record_ids
+        .contains(&bytes::Bytes::from_static(b"rec_b")));
+    assert!(finished
+        .record_ids
+        .contains(&bytes::Bytes::from_static(b"rec_c")));
 }
 
 #[test]
@@ -516,12 +554,21 @@ fn test_reset_clears_state() {
 
     // Verify record_ids and tokens are cleared by adding a new entry and finishing
     let key2 = make_key(b"new_rec", b"new_item");
-    builder.add_entry(&key2, b"v2", &[], EntryType::Put, 2, IdempotencyToken::new(888));
+    builder.add_entry(
+        &key2,
+        b"v2",
+        &[],
+        EntryType::Put,
+        2,
+        IdempotencyToken::new(888),
+    );
     let finished = builder.finish(CompressionType::None).unwrap();
 
     // Only the post-reset entry's record_id and token should be present
     assert_eq!(finished.record_ids.len(), 1);
-    assert!(finished.record_ids.contains(&bytes::Bytes::from_static(b"new_rec")));
+    assert!(finished
+        .record_ids
+        .contains(&bytes::Bytes::from_static(b"new_rec")));
     assert_eq!(finished.idempotency_tokens.len(), 1);
 }
 

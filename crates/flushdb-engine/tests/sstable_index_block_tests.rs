@@ -30,7 +30,9 @@ fn test_find_block_between_keys() {
     let index = build_three_entry_index();
     let between = key(b"abc", b"999");
 
-    let entry = index.find_block(&between).expect("key between blocks must find preceding block");
+    let entry = index
+        .find_block(&between)
+        .expect("key between blocks must find preceding block");
     let expected_first = key(b"aaa", b"001");
     assert_eq!(entry.first_key.as_bytes(), expected_first.as_bytes());
     assert_eq!(entry.block_offset, 0);
@@ -52,7 +54,9 @@ fn test_find_block_after_last() {
     let index = build_three_entry_index();
     let after_last = key(b"zzz", b"999");
 
-    let entry = index.find_block(&after_last).expect("key after last block must return last block");
+    let entry = index
+        .find_block(&after_last)
+        .expect("key after last block must return last block");
     let expected_first = key(b"ccc", b"001");
     assert_eq!(entry.first_key.as_bytes(), expected_first.as_bytes());
     assert_eq!(entry.block_offset, 8192);
@@ -71,11 +75,16 @@ fn test_find_block_single_entry() {
     assert_eq!(entry.first_key.as_bytes(), at_key.as_bytes());
 
     let after_key = key(b"nnn", b"001");
-    let entry = index.find_block(&after_key).expect("key after single entry must find that entry");
+    let entry = index
+        .find_block(&after_key)
+        .expect("key after single entry must find that entry");
     assert_eq!(entry.block_offset, 0, "should return the only block");
 
     let before_key = key(b"aaa", b"001");
-    assert!(index.find_block(&before_key).is_none(), "key before single entry must return None");
+    assert!(
+        index.find_block(&before_key).is_none(),
+        "key before single entry must return None"
+    );
 }
 
 // ─── Key Range ──────────────────────────────────────────────────────
@@ -83,7 +92,9 @@ fn test_find_block_single_entry() {
 #[test]
 fn test_key_range_multiple_blocks() {
     let index = build_three_entry_index();
-    let (min, max) = index.key_range().expect("non-empty index must have a key range");
+    let (min, max) = index
+        .key_range()
+        .expect("non-empty index must have a key range");
 
     let expected_min = key(b"aaa", b"001");
     let expected_max = key(b"ccc", b"001");
@@ -104,7 +115,10 @@ fn test_overlaps_disjoint_before() {
     let start = key(b"\x01", b"\x01");
     let end = key(b"\x02", b"\x02");
 
-    assert!(!index.overlaps(&start, &end), "range entirely before index must not overlap");
+    assert!(
+        !index.overlaps(&start, &end),
+        "range entirely before index must not overlap"
+    );
 }
 
 #[test]
@@ -113,7 +127,10 @@ fn test_overlaps_disjoint_after() {
     let start = key(b"ddd", b"001");
     let end = key(b"zzz", b"999");
 
-    assert!(!index.overlaps(&start, &end), "range entirely after index must not overlap");
+    assert!(
+        !index.overlaps(&start, &end),
+        "range entirely after index must not overlap"
+    );
 }
 
 #[test]
@@ -122,7 +139,10 @@ fn test_overlaps_contained() {
     let start = key(b"aab", b"001");
     let end = key(b"bbc", b"001");
 
-    assert!(index.overlaps(&start, &end), "range within index range must overlap");
+    assert!(
+        index.overlaps(&start, &end),
+        "range within index range must overlap"
+    );
 }
 
 #[test]
@@ -131,7 +151,10 @@ fn test_overlaps_partial() {
     let start = key(b"bbb", b"500");
     let end = key(b"zzz", b"999");
 
-    assert!(index.overlaps(&start, &end), "partially overlapping range must overlap");
+    assert!(
+        index.overlaps(&start, &end),
+        "partially overlapping range must overlap"
+    );
 }
 
 #[test]
@@ -180,7 +203,11 @@ fn test_serialize_empty_index() {
     let index = builder.build();
     let serialized = index.serialize();
 
-    assert_eq!(serialized.len(), 4, "empty index must serialize as 4 bytes [count=0]");
+    assert_eq!(
+        serialized.len(),
+        4,
+        "empty index must serialize as 4 bytes [count=0]"
+    );
     assert_eq!(&serialized[..], &[0, 0, 0, 0]);
 
     let restored = IndexBlock::deserialize(&serialized).expect("deserialize must succeed");

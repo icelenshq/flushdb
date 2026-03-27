@@ -102,10 +102,7 @@ async fn test_concurrent_generation_unique() {
         let keys = handle.await.expect("task should complete");
         for key in keys {
             let bytes = key.to_bytes();
-            assert!(
-                all_keys.insert(bytes),
-                "duplicate key detected: {key:?}"
-            );
+            assert!(all_keys.insert(bytes), "duplicate key detected: {key:?}");
         }
     }
 

@@ -77,10 +77,7 @@ async fn test_s3_delete_existing_key() {
     let prefix = test_prefix("delete_existing");
 
     let key = format!("{}to-delete", prefix);
-    backend
-        .put(&key, Bytes::from("temporary"))
-        .await
-        .unwrap();
+    backend.put(&key, Bytes::from("temporary")).await.unwrap();
 
     backend.delete(&key).await.unwrap();
 
@@ -294,9 +291,7 @@ async fn test_s3_conditional_put_existing_key() {
     let key = format!("{}exists", prefix);
     backend.put(&key, Bytes::from("original")).await.unwrap();
 
-    let result = backend
-        .conditional_put(&key, Bytes::from("conflict"))
-        .await;
+    let result = backend.conditional_put(&key, Bytes::from("conflict")).await;
     assert!(matches!(result, Err(FlushError::PreconditionFailed { .. })));
 
     // Original value unchanged
@@ -330,7 +325,10 @@ async fn test_s3_conditional_put_concurrent_two() {
         .count();
 
     assert_eq!(successes, 1, "exactly one writer should succeed");
-    assert_eq!(failures, 1, "exactly one writer should fail with PreconditionFailed");
+    assert_eq!(
+        failures, 1,
+        "exactly one writer should fail with PreconditionFailed"
+    );
 
     cleanup_test_prefix(&backend, &prefix).await;
 }
@@ -392,7 +390,10 @@ async fn test_s3_unconditional_then_conditional() {
     let key = format!("{}mixed", prefix);
 
     // Unconditional put
-    backend.put(&key, Bytes::from("unconditional")).await.unwrap();
+    backend
+        .put(&key, Bytes::from("unconditional"))
+        .await
+        .unwrap();
 
     // Conditional put on same key should fail
     let result = backend
@@ -437,7 +438,10 @@ async fn test_s3_conditional_put_stress() {
         .count();
 
     assert_eq!(successes, 1, "exactly 1 out of 10 should win");
-    assert_eq!(precondition_failures, 9, "exactly 9 should fail with PreconditionFailed");
+    assert_eq!(
+        precondition_failures, 9,
+        "exactly 9 should fail with PreconditionFailed"
+    );
 
     cleanup_test_prefix(&backend, &prefix).await;
 }
@@ -543,7 +547,9 @@ async fn test_s3_list_prefix_concurrent_writes() {
         let b = backend.clone();
         let key = format!("{}key-{:03}", prefix, i);
         handles.push(tokio::spawn(async move {
-            b.put(&key, Bytes::from(format!("val-{}", i))).await.unwrap();
+            b.put(&key, Bytes::from(format!("val-{}", i)))
+                .await
+                .unwrap();
         }));
     }
     futures::future::join_all(handles).await;
@@ -573,7 +579,11 @@ async fn test_s3_list_prefix_multiple_keys() {
     // Verify all expected keys are present
     for i in 0..50 {
         let expected_key = format!("{}entry-{:04}", prefix, i);
-        assert!(keys.contains(&expected_key), "missing key: {}", expected_key);
+        assert!(
+            keys.contains(&expected_key),
+            "missing key: {}",
+            expected_key
+        );
     }
 
     cleanup_test_prefix(&backend, &prefix).await;
@@ -663,18 +673,9 @@ async fn test_s3_manifest_list_sorted() {
     assert_eq!(listed.len(), 3);
 
     // Should be lexicographically sorted
-    assert_eq!(
-        listed[0],
-        format!("{}MANIFEST-000001", manifest_prefix)
-    );
-    assert_eq!(
-        listed[1],
-        format!("{}MANIFEST-000002", manifest_prefix)
-    );
-    assert_eq!(
-        listed[2],
-        format!("{}MANIFEST-000003", manifest_prefix)
-    );
+    assert_eq!(listed[0], format!("{}MANIFEST-000001", manifest_prefix));
+    assert_eq!(listed[1], format!("{}MANIFEST-000002", manifest_prefix));
+    assert_eq!(listed[2], format!("{}MANIFEST-000003", manifest_prefix));
 
     cleanup_test_prefix(&backend, &prefix).await;
 }
@@ -945,10 +946,15 @@ mod parity {
         local.put(local_key, Bytes::from("first")).await.unwrap();
 
         let s3_r = s3.conditional_put(&s3_key, Bytes::from("second")).await;
-        let local_r = local.conditional_put(local_key, Bytes::from("second")).await;
+        let local_r = local
+            .conditional_put(local_key, Bytes::from("second"))
+            .await;
 
         assert!(matches!(s3_r, Err(FlushError::PreconditionFailed { .. })));
-        assert!(matches!(local_r, Err(FlushError::PreconditionFailed { .. })));
+        assert!(matches!(
+            local_r,
+            Err(FlushError::PreconditionFailed { .. })
+        ));
 
         cleanup_test_prefix(&s3, &prefix).await;
     }
@@ -1018,7 +1024,10 @@ mod parity {
         let local_key = "dg";
 
         s3.put(&s3_key, Bytes::from("ephemeral")).await.unwrap();
-        local.put(local_key, Bytes::from("ephemeral")).await.unwrap();
+        local
+            .put(local_key, Bytes::from("ephemeral"))
+            .await
+            .unwrap();
 
         s3.delete(&s3_key).await.unwrap();
         local.delete(local_key).await.unwrap();
@@ -1054,8 +1063,14 @@ mod parity {
 
         assert_eq!(s3_keys.len(), local_keys.len());
         // Both should be sorted
-        let s3_sorted: Vec<_> = s3_keys.iter().map(|k| k.strip_prefix(&prefix).unwrap()).collect();
-        let local_sorted: Vec<_> = local_keys.iter().map(|k| k.strip_prefix("pfx/").unwrap()).collect();
+        let s3_sorted: Vec<_> = s3_keys
+            .iter()
+            .map(|k| k.strip_prefix(&prefix).unwrap())
+            .collect();
+        let local_sorted: Vec<_> = local_keys
+            .iter()
+            .map(|k| k.strip_prefix("pfx/").unwrap())
+            .collect();
         assert_eq!(s3_sorted, local_sorted);
         assert_eq!(s3_sorted, vec!["alpha", "bravo", "charlie"]);
 

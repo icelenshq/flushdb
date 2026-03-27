@@ -165,11 +165,7 @@ fn test_capacity_eviction() {
     for i in 0..50u64 {
         let key = make_key("sst-big", i * 4096);
         // Each entry has: key (~10+ bytes) + value (100 bytes) + metadata (0) + 40 overhead
-        let block = CachedBlock::new(vec![make_entry(
-            &format!("r{i:03}"),
-            "k",
-            &[0xAB; 100],
-        )]);
+        let block = CachedBlock::new(vec![make_entry(&format!("r{i:03}"), "k", &[0xAB; 100])]);
         cache.insert(key, block);
     }
 

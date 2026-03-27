@@ -243,7 +243,10 @@ fn test_arena_data_survives_new_block_allocation() {
 
     // Allocate and write in block 0
     let s1 = arena.allocate(64);
-    arena.write(&s1, b"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+    arena.write(
+        &s1,
+        b"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    );
     assert_eq!(arena.block_count(), 1);
 
     // Fill block 0 and force new block
@@ -254,7 +257,10 @@ fn test_arena_data_survives_new_block_allocation() {
     arena.write(&s3, &[0xCC; 32]);
 
     // Verify block 0 data is still intact after block 1 was allocated
-    assert_eq!(arena.read(&s1), b"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+    assert_eq!(
+        arena.read(&s1),
+        b"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    );
     assert!(arena.read(&s3).iter().all(|&b| b == 0xCC));
 }
 

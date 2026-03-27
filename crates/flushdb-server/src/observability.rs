@@ -5,15 +5,15 @@ use flushdb_engine::{CacheStats, Level};
 use flushdb_types::FlushResult;
 use metrics::{counter, gauge, histogram};
 use metrics_exporter_prometheus::PrometheusBuilder;
-use tracing_subscriber::{EnvFilter, fmt, prelude::*};
+use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 pub struct MetricsHandle {
     _handle: metrics_exporter_prometheus::PrometheusHandle,
 }
 
 pub fn init_tracing(log_level: &str) -> FlushResult<()> {
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(log_level));
+    let env_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(log_level));
 
     let log_format = std::env::var("FLUSHDB_LOG_FORMAT").unwrap_or_default();
     let is_pretty = log_format.eq_ignore_ascii_case("pretty");
@@ -27,10 +27,7 @@ pub fn init_tracing(log_level: &str) -> FlushResult<()> {
             .with_target(true);
         registry.with(layer).try_init()
     } else {
-        let layer = fmt::layer()
-            .json()
-            .with_thread_ids(true)
-            .with_target(true);
+        let layer = fmt::layer().json().with_thread_ids(true).with_target(true);
         registry.with(layer).try_init()
     };
 
@@ -63,7 +60,8 @@ pub fn record_read_latency(namespace: &str, operation: &str, duration: Duration)
 
 pub fn record_flush(namespace: &str, duration: Duration, bytes: u64) {
     counter!("flushdb_flush_total", "namespace" => namespace.to_owned()).increment(1);
-    histogram!("flushdb_flush_duration_seconds", "namespace" => namespace.to_owned()).record(duration.as_secs_f64());
+    histogram!("flushdb_flush_duration_seconds", "namespace" => namespace.to_owned())
+        .record(duration.as_secs_f64());
     counter!("flushdb_flush_bytes_total", "namespace" => namespace.to_owned()).increment(bytes);
 }
 
@@ -75,14 +73,16 @@ pub fn record_compaction(namespace: &str, level: &str, duration: Duration, bytes
 
 pub fn update_cache_stats(namespace: &str, stats: &CacheStats) {
     gauge!("flushdb_cache_hits_total", "namespace" => namespace.to_owned()).set(stats.hits as f64);
-    gauge!("flushdb_cache_misses_total", "namespace" => namespace.to_owned()).set(stats.misses as f64);
+    gauge!("flushdb_cache_misses_total", "namespace" => namespace.to_owned())
+        .set(stats.misses as f64);
     let ratio = if stats.hits + stats.misses > 0 {
         stats.hits as f64 / (stats.hits + stats.misses) as f64
     } else {
         0.0
     };
     gauge!("flushdb_cache_hit_ratio", "namespace" => namespace.to_owned()).set(ratio);
-    gauge!("flushdb_cache_size_bytes", "namespace" => namespace.to_owned()).set(stats.weighted_size_bytes as f64);
+    gauge!("flushdb_cache_size_bytes", "namespace" => namespace.to_owned())
+        .set(stats.weighted_size_bytes as f64);
 }
 
 pub fn update_level_stats(namespace: &str, levels: &[(Level, u64)], l0_count: usize) {

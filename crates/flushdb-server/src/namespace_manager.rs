@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 use dashmap::DashMap;
-use flushdb_engine::{GetResult, RangeReadOptions, RangeReadResult};
+use flushdb_engine::{GetResult, PutBatchItem, RangeReadOptions, RangeReadResult};
 use flushdb_types::{FlushError, FlushResult, IdempotencyToken, OrderedKey, StorageBackend};
 use tokio::sync::RwLock;
 
@@ -84,12 +84,12 @@ impl<B: StorageBackend + Clone + 'static> NamespaceManager<B> {
     }
 
     pub fn update_namespace_config(&self, config: NamespaceConfig) -> FlushResult<()> {
-        let mut entry = self
-            .namespaces
-            .get_mut(&config.name)
-            .ok_or_else(|| FlushError::NotFound {
-                key: format!("namespace: {}", config.name),
-            })?;
+        let mut entry =
+            self.namespaces
+                .get_mut(&config.name)
+                .ok_or_else(|| FlushError::NotFound {
+                    key: format!("namespace: {}", config.name),
+                })?;
         entry.config.can_update_from(&config)?;
         entry.config = config;
         Ok(())
@@ -147,12 +147,13 @@ impl<B: StorageBackend + Clone + 'static> NamespaceManager<B> {
             })?;
 
         let partition_id = entry.router.route(record_id)? as usize;
-        let partition = entry
-            .partitions
-            .get(partition_id)
-            .ok_or_else(|| FlushError::InvalidArgument {
-                message: format!("partition index out of bounds: {}", partition_id),
-            })?;
+        let partition =
+            entry
+                .partitions
+                .get(partition_id)
+                .ok_or_else(|| FlushError::InvalidArgument {
+                    message: format!("partition index out of bounds: {}", partition_id),
+                })?;
 
         Ok(Arc::clone(partition))
     }
@@ -179,6 +180,17 @@ impl<B: StorageBackend + Clone + 'static> NamespaceManager<B> {
                 idempotency_token,
             )
             .await
+    }
+
+    pub async fn put_batch(
+        &self,
+        namespace: &str,
+        record_id: &str,
+        items: Vec<PutBatchItem>,
+    ) -> FlushResult<usize> {
+        let partition_arc = self.resolve_partition(namespace, record_id)?;
+        let mut partition = partition_arc.write().await;
+        partition.put_batch(record_id.as_bytes(), items).await
     }
 
     pub async fn delete(

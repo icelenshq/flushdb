@@ -143,11 +143,7 @@ impl CompactionScheduler {
         })
     }
 
-    pub fn check_level_trigger(
-        &self,
-        manifest: &Manifest,
-        level: Level,
-    ) -> Option<CompactionTask> {
+    pub fn check_level_trigger(&self, manifest: &Manifest, level: Level) -> Option<CompactionTask> {
         let max_bytes = match level {
             Level::L1 => self.config.l1_max_bytes,
             Level::L2 => self.config.l2_max_bytes,

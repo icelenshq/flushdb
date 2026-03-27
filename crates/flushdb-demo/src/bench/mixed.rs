@@ -99,7 +99,13 @@ pub async fn run(config: &BenchConfig) -> Result<MixedResult, Box<dyn std::error
                 let product_id = rng.random_range(0..product_range);
                 let record_id = ProductGenerator::record_id(product_id);
 
-                match pick_op(&mut rng, write_ratio, update_ratio, delete_ratio, scan_ratio) {
+                match pick_op(
+                    &mut rng,
+                    write_ratio,
+                    update_ratio,
+                    delete_ratio,
+                    scan_ratio,
+                ) {
                     Op::Write => {
                         let items = gen.generate_product(product_id);
                         let t = Instant::now();
@@ -148,7 +154,13 @@ pub async fn run(config: &BenchConfig) -> Result<MixedResult, Box<dyn std::error
                     }
                 }
             }
-            (read_stats, write_stats, update_stats, delete_stats, scan_stats)
+            (
+                read_stats,
+                write_stats,
+                update_stats,
+                delete_stats,
+                scan_stats,
+            )
         }));
     }
 

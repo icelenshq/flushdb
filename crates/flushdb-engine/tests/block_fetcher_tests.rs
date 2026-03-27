@@ -1,7 +1,7 @@
 use bytes::Bytes;
-use flushdb_engine::sstable::{CompressionType, SstConfig, SSTableWriter, SstInfo};
+use flushdb_engine::sstable::{CompressionType, SSTableWriter, SstConfig, SstInfo};
 use flushdb_engine::{
-    BlockFetcher, DirectBlockFetcher, Level, ManifestConfig, SSTableHandle, SSTableMeta, LevelState,
+    BlockFetcher, DirectBlockFetcher, Level, LevelState, ManifestConfig, SSTableHandle, SSTableMeta,
 };
 use flushdb_types::{
     CompositeKey, EntryType, EntryValue, IdempotencyToken, LocalFsBackend, MemtableEntry,
@@ -21,11 +21,7 @@ fn make_entry(record_id: &str, item_key: &str, value: &str, seq: u64) -> Memtabl
     )
 }
 
-async fn write_sst(
-    backend: &LocalFsBackend,
-    path: &str,
-    entries: Vec<MemtableEntry>,
-) -> SstInfo {
+async fn write_sst(backend: &LocalFsBackend, path: &str, entries: Vec<MemtableEntry>) -> SstInfo {
     let config = SstConfig::default().with_compression(CompressionType::None);
     let writer = SSTableWriter::new(config);
     writer
@@ -48,7 +44,14 @@ async fn test_fetch_block_decodes_correctly() {
     let backend = LocalFsBackend::new(tmp.path());
 
     let entries: Vec<MemtableEntry> = (0..10)
-        .map(|i| make_entry(&format!("rec_{i:04}"), &format!("item_{i:04}"), &format!("val_{i}"), i + 1))
+        .map(|i| {
+            make_entry(
+                &format!("rec_{i:04}"),
+                &format!("item_{i:04}"),
+                &format!("val_{i}"),
+                i + 1,
+            )
+        })
         .collect();
 
     let info = write_sst(&backend, "test.sst", entries.clone()).await;
@@ -86,7 +89,14 @@ async fn test_fetch_raw_block_returns_bytes() {
     let backend = LocalFsBackend::new(tmp.path());
 
     let entries: Vec<MemtableEntry> = (0..5)
-        .map(|i| make_entry(&format!("rec_{i:04}"), &format!("item_{i:04}"), &format!("val_{i}"), i + 1))
+        .map(|i| {
+            make_entry(
+                &format!("rec_{i:04}"),
+                &format!("item_{i:04}"),
+                &format!("val_{i}"),
+                i + 1,
+            )
+        })
         .collect();
 
     let info = write_sst(&backend, "raw.sst", entries).await;
@@ -110,11 +120,12 @@ async fn test_fetch_block_nonexistent_path() {
     let tmp = TempDir::new().unwrap();
     let fetcher = DirectBlockFetcher::new(LocalFsBackend::new(tmp.path()));
 
-    let result = fetcher
-        .fetch_raw_block("nonexistent.sst", 0, 100)
-        .await;
+    let result = fetcher.fetch_raw_block("nonexistent.sst", 0, 100).await;
 
-    assert!(result.is_err(), "fetching from nonexistent file should fail");
+    assert!(
+        result.is_err(),
+        "fetching from nonexistent file should fail"
+    );
 }
 
 #[tokio::test]
@@ -126,11 +137,12 @@ async fn test_fetch_block_invalid_offset() {
     let _info = write_sst(&backend, "small.sst", entries).await;
     let fetcher = DirectBlockFetcher::new(LocalFsBackend::new(tmp.path()));
 
-    let result = fetcher
-        .fetch_raw_block("small.sst", 999_999, 100)
-        .await;
+    let result = fetcher.fetch_raw_block("small.sst", 999_999, 100).await;
 
-    assert!(result.is_err(), "fetching at offset beyond file size should fail");
+    assert!(
+        result.is_err(),
+        "fetching at offset beyond file size should fail"
+    );
 }
 
 // ---- SSTableHandle Tests ----
@@ -141,7 +153,14 @@ async fn test_handle_open_loads_metadata() {
     let backend = LocalFsBackend::new(tmp.path());
 
     let entries: Vec<MemtableEntry> = (0..20)
-        .map(|i| make_entry(&format!("rec_{i:04}"), &format!("item_{i:04}"), &format!("val_{i}"), i + 1))
+        .map(|i| {
+            make_entry(
+                &format!("rec_{i:04}"),
+                &format!("item_{i:04}"),
+                &format!("val_{i}"),
+                i + 1,
+            )
+        })
         .collect();
 
     let info = write_sst(&backend, "meta.sst", entries).await;
@@ -154,7 +173,10 @@ async fn test_handle_open_loads_metadata() {
 
     assert!(handle.block_count() > 0, "should have at least one block");
     assert_eq!(handle.meta.entry_count, 20);
-    assert!(handle.key_range().is_some(), "index block should expose key range");
+    assert!(
+        handle.key_range().is_some(),
+        "index block should expose key range"
+    );
 }
 
 #[tokio::test]
@@ -163,7 +185,14 @@ async fn test_handle_bloom_filter_check() {
     let backend = LocalFsBackend::new(tmp.path());
 
     let entries: Vec<MemtableEntry> = (0..50)
-        .map(|i| make_entry(&format!("rec_{i:04}"), &format!("item_{i:04}"), &format!("val_{i}"), i + 1))
+        .map(|i| {
+            make_entry(
+                &format!("rec_{i:04}"),
+                &format!("item_{i:04}"),
+                &format!("val_{i}"),
+                i + 1,
+            )
+        })
         .collect();
 
     let info = write_sst(&backend, "bloom.sst", entries).await;
@@ -204,7 +233,14 @@ async fn test_handle_point_lookup_hit() {
     let backend = LocalFsBackend::new(tmp.path());
 
     let entries: Vec<MemtableEntry> = (0..20)
-        .map(|i| make_entry(&format!("rec_{i:04}"), &format!("item_{i:04}"), &format!("val_{i}"), i + 1))
+        .map(|i| {
+            make_entry(
+                &format!("rec_{i:04}"),
+                &format!("item_{i:04}"),
+                &format!("val_{i}"),
+                i + 1,
+            )
+        })
         .collect();
 
     let info = write_sst(&backend, "lookup.sst", entries).await;
@@ -231,7 +267,14 @@ async fn test_handle_point_lookup_miss() {
     let backend = LocalFsBackend::new(tmp.path());
 
     let entries: Vec<MemtableEntry> = (0..10)
-        .map(|i| make_entry(&format!("rec_{i:04}"), &format!("item_{i:04}"), &format!("val_{i}"), i + 1))
+        .map(|i| {
+            make_entry(
+                &format!("rec_{i:04}"),
+                &format!("item_{i:04}"),
+                &format!("val_{i}"),
+                i + 1,
+            )
+        })
         .collect();
 
     let info = write_sst(&backend, "miss.sst", entries).await;
@@ -245,7 +288,10 @@ async fn test_handle_point_lookup_miss() {
     // Look up a key that doesn't exist
     let key = CompositeKey::new(b"rec_9999", b"item_9999").unwrap();
     let result = handle.get(&key, &fetcher).await.unwrap();
-    assert!(result.is_none(), "point lookup should return None for absent key");
+    assert!(
+        result.is_none(),
+        "point lookup should return None for absent key"
+    );
 }
 
 #[tokio::test]
@@ -255,7 +301,14 @@ async fn test_handle_point_lookup_bloom_miss() {
 
     // Write entries with a specific prefix
     let entries: Vec<MemtableEntry> = (0..50)
-        .map(|i| make_entry(&format!("alpha_{i:04}"), &format!("item_{i:04}"), &format!("val_{i}"), i + 1))
+        .map(|i| {
+            make_entry(
+                &format!("alpha_{i:04}"),
+                &format!("item_{i:04}"),
+                &format!("val_{i}"),
+                i + 1,
+            )
+        })
         .collect();
 
     let info = write_sst(&backend, "bloommiss.sst", entries).await;
@@ -295,7 +348,14 @@ async fn test_handle_scan_full_range() {
     let backend = LocalFsBackend::new(tmp.path());
 
     let entries: Vec<MemtableEntry> = (0..30)
-        .map(|i| make_entry(&format!("rec_{i:04}"), &format!("item_{i:04}"), &format!("val_{i}"), i + 1))
+        .map(|i| {
+            make_entry(
+                &format!("rec_{i:04}"),
+                &format!("item_{i:04}"),
+                &format!("val_{i}"),
+                i + 1,
+            )
+        })
         .collect();
 
     let info = write_sst(&backend, "scanfull.sst", entries).await;
@@ -327,7 +387,14 @@ async fn test_handle_scan_bounded_range() {
     let backend = LocalFsBackend::new(tmp.path());
 
     let entries: Vec<MemtableEntry> = (0..30)
-        .map(|i| make_entry(&format!("rec_{i:04}"), &format!("item_{i:04}"), &format!("val_{i}"), i + 1))
+        .map(|i| {
+            make_entry(
+                &format!("rec_{i:04}"),
+                &format!("item_{i:04}"),
+                &format!("val_{i}"),
+                i + 1,
+            )
+        })
         .collect();
 
     let info = write_sst(&backend, "scanbounded.sst", entries).await;
@@ -351,17 +418,15 @@ async fn test_handle_scan_bounded_range() {
 
     for entry in &result {
         let key_bytes = entry.composite_key.as_bytes();
-        assert!(
-            key_bytes >= start.as_bytes(),
-            "entry should be >= start"
-        );
-        assert!(
-            key_bytes < end.as_bytes(),
-            "entry should be < end"
-        );
+        assert!(key_bytes >= start.as_bytes(), "entry should be >= start");
+        assert!(key_bytes < end.as_bytes(), "entry should be < end");
     }
 
-    assert_eq!(result.len(), 10, "should return exactly 10 entries (rec_0010 through rec_0019)");
+    assert_eq!(
+        result.len(),
+        10,
+        "should return exactly 10 entries (rec_0010 through rec_0019)"
+    );
 }
 
 #[tokio::test]
@@ -370,7 +435,14 @@ async fn test_handle_key_range() {
     let backend = LocalFsBackend::new(tmp.path());
 
     let entries: Vec<MemtableEntry> = (0..10)
-        .map(|i| make_entry(&format!("rec_{i:04}"), &format!("item_{i:04}"), &format!("val_{i}"), i + 1))
+        .map(|i| {
+            make_entry(
+                &format!("rec_{i:04}"),
+                &format!("item_{i:04}"),
+                &format!("val_{i}"),
+                i + 1,
+            )
+        })
         .collect();
 
     let info = write_sst(&backend, "keyrange.sst", entries).await;
@@ -385,7 +457,10 @@ async fn test_handle_key_range() {
     let expected_min = CompositeKey::new(b"rec_0000", b"item_0000").unwrap();
 
     // key_range returns first keys of first and last blocks (index block behavior)
-    assert_eq!(*min_key, expected_min, "min key should be the first entry's key");
+    assert_eq!(
+        *min_key, expected_min,
+        "min key should be the first entry's key"
+    );
     // max_key is the first key of the last block, which depends on block boundaries
 }
 
@@ -652,7 +727,14 @@ async fn test_handle_overlaps() {
     let fetcher = DirectBlockFetcher::new(LocalFsBackend::new(tmp.path()));
 
     let entries: Vec<MemtableEntry> = (10..20)
-        .map(|i| make_entry(&format!("rec_{i:04}"), &format!("item_{i:04}"), &format!("val_{i}"), i + 1))
+        .map(|i| {
+            make_entry(
+                &format!("rec_{i:04}"),
+                &format!("item_{i:04}"),
+                &format!("val_{i}"),
+                i + 1,
+            )
+        })
         .collect();
 
     let info = write_sst(&backend, "overlap.sst", entries).await;
@@ -760,7 +842,11 @@ async fn test_handle_multiple_blocks_scan() {
     // Full scan should still return all entries
     let start = CompositeKey::new(b"rec_0000", b"item_0000").unwrap();
     let result = handle.scan(&start, None, &fetcher).await.unwrap();
-    assert_eq!(result.len(), 500, "scan across multiple blocks should return all entries");
+    assert_eq!(
+        result.len(),
+        500,
+        "scan across multiple blocks should return all entries"
+    );
 }
 
 #[tokio::test]
@@ -769,7 +855,10 @@ async fn test_fetcher_backend_accessor_round_trip() {
     let fetcher = DirectBlockFetcher::new(LocalFsBackend::new(tmp.path()));
     let backend = fetcher.backend();
 
-    backend.put("test-key", Bytes::from("test-value")).await.unwrap();
+    backend
+        .put("test-key", Bytes::from("test-value"))
+        .await
+        .unwrap();
     let result = backend.get("test-key").await.unwrap();
     assert_eq!(result, Bytes::from("test-value"));
 }

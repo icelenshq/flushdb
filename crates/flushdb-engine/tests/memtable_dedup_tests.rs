@@ -256,13 +256,8 @@ fn test_10k_unique_tokens_all_accepted() {
 
     for i in 0..10_000u64 {
         let token = make_token(i + 1);
-        mt.insert(make_put_with_token(
-            "r1",
-            &format!("k{i:06}"),
-            "val",
-            token,
-        ))
-        .unwrap();
+        mt.insert(make_put_with_token("r1", &format!("k{i:06}"), "val", token))
+            .unwrap();
     }
 
     assert_eq!(mt.entry_count(), 10_000);
@@ -275,13 +270,8 @@ fn test_replay_same_10k_tokens_all_rejected() {
     let tokens: Vec<IdempotencyToken> = (1..=10_000u64).map(make_token).collect();
 
     for (i, &token) in tokens.iter().enumerate() {
-        mt.insert(make_put_with_token(
-            "r1",
-            &format!("k{i:06}"),
-            "val",
-            token,
-        ))
-        .unwrap();
+        mt.insert(make_put_with_token("r1", &format!("k{i:06}"), "val", token))
+            .unwrap();
     }
 
     for (i, &token) in tokens.iter().enumerate() {

@@ -38,8 +38,7 @@ impl RangeTombstoneIndex {
     pub fn covers(&self, record_id: &[u8], item_key: &[u8], entry_sequence: u64) -> bool {
         for ts in self.tombstones_for_record(record_id) {
             if ts.start_key.as_ref() <= item_key {
-                let in_range =
-                    ts.end_key.is_empty() || item_key < ts.end_key.as_ref();
+                let in_range = ts.end_key.is_empty() || item_key < ts.end_key.as_ref();
                 if in_range && ts.sequence_number > entry_sequence {
                     return true;
                 }
@@ -55,9 +54,9 @@ impl RangeTombstoneIndex {
         // Binary search to find any tombstone with this record_id.
         // Since tombstones are sorted by (record_id, start_key), all tombstones
         // for a given record_id form a contiguous run.
-        let search_result = self.tombstones.binary_search_by(|ts| {
-            ts.record_id.as_ref().cmp(record_id)
-        });
+        let search_result = self
+            .tombstones
+            .binary_search_by(|ts| ts.record_id.as_ref().cmp(record_id));
 
         let anchor = match search_result {
             Ok(idx) => idx,
@@ -76,9 +75,7 @@ impl RangeTombstoneIndex {
         // Walk forward to find the last tombstone for this record_id
         let end = {
             let mut i = anchor + 1;
-            while i < self.tombstones.len()
-                && self.tombstones[i].record_id.as_ref() == record_id
-            {
+            while i < self.tombstones.len() && self.tombstones[i].record_id.as_ref() == record_id {
                 i += 1;
             }
             i

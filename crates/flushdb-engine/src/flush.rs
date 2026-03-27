@@ -6,7 +6,7 @@ use crate::manifest::manager::ManifestManager;
 use crate::manifest::types::{Level, ManifestUpdate, ManifestUpdateTrigger, SSTableMeta};
 use crate::memtable::Memtable;
 use crate::sstable::types::SstConfig;
-use crate::sstable::writer::{SSTableWriter, SstInfo, generate_sst_path};
+use crate::sstable::writer::{generate_sst_path, SSTableWriter, SstInfo};
 
 #[derive(Clone, Debug)]
 pub struct FlushConfig {
@@ -106,12 +106,8 @@ impl FlushPipeline {
             .unwrap_or_default()
             .as_millis() as u64;
 
-        let sst_meta = SSTableMeta::from_sst_info(
-            &sst_info,
-            (min_seq, max_seq),
-            record_id_count,
-            now_ms,
-        );
+        let sst_meta =
+            SSTableMeta::from_sst_info(&sst_info, (min_seq, max_seq), record_id_count, now_ms);
 
         // Step 4: Update manifest via CAS
         let update = ManifestUpdate {

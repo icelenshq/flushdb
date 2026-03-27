@@ -56,14 +56,22 @@ impl Arena {
             let offset = self.current_offset;
             self.current_offset += size;
             self.total_allocated += size;
-            ArenaSlice { block, offset, len: size }
+            ArenaSlice {
+                block,
+                offset,
+                len: size,
+            }
         } else {
             let new_block_size = self.block_size.max(size);
             self.blocks.push(vec![0u8; new_block_size]);
             self.current_offset = size;
             self.total_allocated += size;
             let block = self.blocks.len() - 1;
-            ArenaSlice { block, offset: 0, len: size }
+            ArenaSlice {
+                block,
+                offset: 0,
+                len: size,
+            }
         }
     }
 
@@ -74,8 +82,7 @@ impl Arena {
             data.len(),
             slice.len
         );
-        self.blocks[slice.block][slice.offset..slice.offset + data.len()]
-            .copy_from_slice(data);
+        self.blocks[slice.block][slice.offset..slice.offset + data.len()].copy_from_slice(data);
     }
 
     pub fn read(&self, slice: &ArenaSlice) -> &[u8] {

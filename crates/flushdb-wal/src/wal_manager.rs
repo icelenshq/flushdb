@@ -58,6 +58,17 @@ impl WalManager {
         Ok(notification)
     }
 
+    pub async fn append_batch(
+        &mut self,
+        entries: Vec<WalEntry>,
+        generation_id: u64,
+    ) -> FlushResult<DurabilityNotification> {
+        let notification = self.group_commit.submit_batch(entries).await?;
+        let seg_num = self.current_segment_number.load(Ordering::Relaxed);
+        self.dirty_tracker.record_write(seg_num, generation_id, 0);
+        Ok(notification)
+    }
+
     pub async fn append_if_not_full(
         &mut self,
         entry: WalEntry,
@@ -139,15 +150,12 @@ impl WalManager {
         let size_pressure = total_size > self.config.max_total_wal_bytes;
         let backpressure = total_size > self.config.max_wal_size;
 
-        let oldest_pinned_generation = self
-            .dirty_tracker
-            .oldest_pinned_segment()
-            .and_then(|seg| {
-                self.dirty_tracker
-                    .generations_for_segment(seg)
-                    .into_iter()
-                    .next()
-            });
+        let oldest_pinned_generation = self.dirty_tracker.oldest_pinned_segment().and_then(|seg| {
+            self.dirty_tracker
+                .generations_for_segment(seg)
+                .into_iter()
+                .next()
+        });
 
         Ok(FlushTriggers {
             age_triggered_segments: age_triggered,

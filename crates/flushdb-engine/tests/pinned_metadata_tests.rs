@@ -20,12 +20,8 @@ fn make_metadata() -> PinnedMetadata {
     );
     let index_block = index_builder.build();
 
-    let min_key = SstFooter::truncate_key(
-        &CompositeKey::new(b"aaa", b"000").expect("valid key"),
-    );
-    let max_key = SstFooter::truncate_key(
-        &CompositeKey::new(b"zzz", b"999").expect("valid key"),
-    );
+    let min_key = SstFooter::truncate_key(&CompositeKey::new(b"aaa", b"000").expect("valid key"));
+    let max_key = SstFooter::truncate_key(&CompositeKey::new(b"zzz", b"999").expect("valid key"));
     let footer = SstFooter {
         bloom_filter_offset: 8192,
         bloom_filter_size: 512,

@@ -43,10 +43,8 @@ fn make_pinned_metadata() -> PinnedMetadata {
     );
     let index_block = index_builder.build();
 
-    let min_key =
-        SstFooter::truncate_key(&CompositeKey::new(b"aaa", b"000").expect("valid key"));
-    let max_key =
-        SstFooter::truncate_key(&CompositeKey::new(b"zzz", b"999").expect("valid key"));
+    let min_key = SstFooter::truncate_key(&CompositeKey::new(b"aaa", b"000").expect("valid key"));
+    let max_key = SstFooter::truncate_key(&CompositeKey::new(b"zzz", b"999").expect("valid key"));
     let footer = SstFooter {
         bloom_filter_offset: 8192,
         bloom_filter_size: 512,
@@ -107,14 +105,8 @@ fn test_evict_sstable_clears_pinned_metadata() {
 fn test_evict_sstable_preserves_other_data() {
     let (block_cache, mut pinned) = make_default_caches();
 
-    block_cache.insert(
-        make_key("sst-a", 0),
-        CachedBlock::new(vec![make_entry()]),
-    );
-    block_cache.insert(
-        make_key("sst-b", 0),
-        CachedBlock::new(vec![make_entry()]),
-    );
+    block_cache.insert(make_key("sst-a", 0), CachedBlock::new(vec![make_entry()]));
+    block_cache.insert(make_key("sst-b", 0), CachedBlock::new(vec![make_entry()]));
     pinned.pin("sst-a".to_string(), make_pinned_metadata());
     pinned.pin("sst-b".to_string(), make_pinned_metadata());
 
@@ -140,10 +132,7 @@ fn test_evict_sstables_batch() {
     let (block_cache, mut pinned) = make_default_caches();
 
     for id in ["a", "b", "c"] {
-        block_cache.insert(
-            make_key(id, 0),
-            CachedBlock::new(vec![make_entry()]),
-        );
+        block_cache.insert(make_key(id, 0), CachedBlock::new(vec![make_entry()]));
         pinned.pin(id.to_string(), make_pinned_metadata());
     }
 
@@ -166,10 +155,7 @@ fn test_evict_sstables_batch() {
 fn test_evict_sstables_empty_list() {
     let (block_cache, mut pinned) = make_default_caches();
 
-    block_cache.insert(
-        make_key("sst-x", 0),
-        CachedBlock::new(vec![make_entry()]),
-    );
+    block_cache.insert(make_key("sst-x", 0), CachedBlock::new(vec![make_entry()]));
     pinned.pin("sst-x".to_string(), make_pinned_metadata());
 
     evict_sstables(&block_cache, &mut pinned, &[]);
@@ -183,10 +169,7 @@ fn test_evict_compaction_result() {
     let (block_cache, mut pinned) = make_default_caches();
 
     for id in ["old-1", "old-2", "keep"] {
-        block_cache.insert(
-            make_key(id, 0),
-            CachedBlock::new(vec![make_entry()]),
-        );
+        block_cache.insert(make_key(id, 0), CachedBlock::new(vec![make_entry()]));
         pinned.pin(id.to_string(), make_pinned_metadata());
     }
 

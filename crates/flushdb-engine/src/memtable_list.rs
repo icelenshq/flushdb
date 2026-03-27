@@ -11,6 +11,7 @@ use crate::range_tombstone::RangeTombstone;
 pub struct MemtableList {
     active: Memtable,
     frozen: Vec<Memtable>,
+    frozen_generation_ids: Vec<u64>,
     config: MemtableConfig,
 }
 
@@ -19,6 +20,7 @@ impl MemtableList {
         Self {
             active: Memtable::new(config.clone(), starting_sequence),
             frozen: Vec::new(),
+            frozen_generation_ids: Vec::new(),
             config,
         }
     }
@@ -60,6 +62,10 @@ impl MemtableList {
         self.active.insert(entry)
     }
 
+    pub(crate) fn insert_prechecked(&mut self, entry: MemtableEntry) -> FlushResult<u64> {
+        self.active.insert_with_assigned_sequence(entry)
+    }
+
     pub fn get(&self, key: &CompositeKey) -> Option<MemtableEntry> {
         if let Some(entry) = self.active.get(key) {
             return Some(entry);
@@ -91,6 +97,10 @@ impl MemtableList {
     }
 
     pub fn freeze_active(&mut self) -> FlushResult<()> {
+        self.freeze_active_with_generation(0)
+    }
+
+    pub(crate) fn freeze_active_with_generation(&mut self, generation_id: u64) -> FlushResult<()> {
         if self.frozen.len() >= self.config.max_frozen_count {
             return Err(FlushError::ResourceExhausted {
                 resource: "memtable".into(),
@@ -108,6 +118,7 @@ impl MemtableList {
             Memtable::new(self.config.clone(), next_seq),
         );
         self.frozen.insert(0, old_active);
+        self.frozen_generation_ids.insert(0, generation_id);
         Ok(())
     }
 
@@ -116,10 +127,20 @@ impl MemtableList {
     }
 
     pub fn pop_oldest_frozen(&mut self) -> Option<Memtable> {
+        self.pop_oldest_frozen_with_generation()
+            .map(|(_, memtable)| memtable)
+    }
+
+    pub(crate) fn pop_oldest_frozen_with_generation(&mut self) -> Option<(u64, Memtable)> {
         if self.frozen.is_empty() {
+            debug_assert!(self.frozen_generation_ids.is_empty());
             None
         } else {
-            Some(self.frozen.remove(self.frozen.len() - 1))
+            let oldest_generation = self
+                .frozen_generation_ids
+                .pop()
+                .expect("frozen generations must track frozen memtables");
+            Some((oldest_generation, self.frozen.remove(self.frozen.len() - 1)))
         }
     }
 
@@ -181,11 +202,18 @@ impl MemtableList {
         item_key: &[u8],
         entry_sequence: u64,
     ) -> bool {
-        if self.active.range_tombstones().covers(record_id, item_key, entry_sequence) {
+        if self
+            .active
+            .range_tombstones()
+            .covers(record_id, item_key, entry_sequence)
+        {
             return true;
         }
         for frozen_mt in &self.frozen {
-            if frozen_mt.range_tombstones().covers(record_id, item_key, entry_sequence) {
+            if frozen_mt
+                .range_tombstones()
+                .covers(record_id, item_key, entry_sequence)
+            {
                 return true;
             }
         }

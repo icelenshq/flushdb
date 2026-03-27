@@ -170,7 +170,10 @@ impl MergeIterator {
     pub fn next_entry(&mut self) -> Option<MergeEntry> {
         let item = self.heap.pop()?;
         let source = &mut self.sources[item.source_idx];
-        let entry = source.peek().expect("heap item from exhausted source").clone();
+        let entry = source
+            .peek()
+            .expect("heap item from exhausted source")
+            .clone();
         source.advance();
 
         // Re-push if source has more entries

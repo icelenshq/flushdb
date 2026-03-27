@@ -307,9 +307,7 @@ impl SSTableMeta {
 
     pub fn sst_path(&self, namespace: &str, level: Level) -> String {
         if let (Some(run_id), Some(frag_idx)) = (&self.run_id, self.fragment_index) {
-            format!(
-                "flushdb/{namespace}/sstables/{level}/run-{run_id}/frag-{frag_idx:04}.sst"
-            )
+            format!("flushdb/{namespace}/sstables/{level}/run-{run_id}/frag-{frag_idx:04}.sst")
         } else {
             format!("flushdb/{namespace}/sstables/{level}/{}.sst", self.id)
         }
@@ -394,23 +392,14 @@ impl Manifest {
             .collect()
     }
 
-    pub fn find_overlapping(
-        &self,
-        level: Level,
-        start: &[u8],
-        end: &[u8],
-    ) -> Vec<&SSTableMeta> {
+    pub fn find_overlapping(&self, level: Level, start: &[u8], end: &[u8]) -> Vec<&SSTableMeta> {
         self.sstables_at_level(level)
             .iter()
             .filter(|m| m.overlaps_range(start, end))
             .collect()
     }
 
-    pub fn find_sstable_for_key(
-        &self,
-        level: Level,
-        key: &CompositeKey,
-    ) -> Option<&SSTableMeta> {
+    pub fn find_sstable_for_key(&self, level: Level, key: &CompositeKey) -> Option<&SSTableMeta> {
         let ssts = self.sstables_at_level(level);
         if ssts.is_empty() {
             return None;
@@ -481,9 +470,7 @@ impl ManifestUpdate {
                 }
                 None => {
                     return Err(FlushError::InvalidArgument {
-                        message: format!(
-                            "cannot remove SSTable {id} from {level}: not found",
-                        ),
+                        message: format!("cannot remove SSTable {id} from {level}: not found",),
                     });
                 }
             }
@@ -563,9 +550,7 @@ pub fn run_fragment_path(
     run_id: &str,
     fragment_index: u32,
 ) -> String {
-    format!(
-        "{base}/{namespace}/sstables/{level}/run-{run_id}/frag-{fragment_index:04}.sst"
-    )
+    format!("{base}/{namespace}/sstables/{level}/run-{run_id}/frag-{fragment_index:04}.sst")
 }
 
 fn now_ms() -> u64 {

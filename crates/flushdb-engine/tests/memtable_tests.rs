@@ -155,7 +155,10 @@ fn test_get_key_covered_by_range_tombstone() {
     mt.insert(make_range_delete("r1", "a", "z")).unwrap();
 
     let key = CompositeKey::new(b"r1", b"b").unwrap();
-    assert!(mt.get(&key).is_none(), "should be covered by range tombstone");
+    assert!(
+        mt.get(&key).is_none(),
+        "should be covered by range tombstone"
+    );
 }
 
 #[test]
@@ -165,7 +168,9 @@ fn test_get_key_not_covered_by_range_tombstone_lower_seq() {
     mt.insert(make_put("r1", "b", "v1")).unwrap();
 
     let key = CompositeKey::new(b"r1", b"b").unwrap();
-    let entry = mt.get(&key).expect("range tombstone has lower seq, should not cover");
+    let entry = mt
+        .get(&key)
+        .expect("range tombstone has lower seq, should not cover");
     assert_eq!(entry.value, Bytes::from("v1"));
 }
 
@@ -365,8 +370,12 @@ fn test_should_freeze_by_size() {
     assert!(!mt.should_freeze_by_size());
 
     for i in 0..20 {
-        mt.insert(make_put("r1", &format!("key{i:04}"), "some_value_that_takes_space"))
-            .unwrap();
+        mt.insert(make_put(
+            "r1",
+            &format!("key{i:04}"),
+            "some_value_that_takes_space",
+        ))
+        .unwrap();
     }
 
     assert!(mt.should_freeze_by_size());
@@ -544,9 +553,7 @@ fn test_100k_entries_match_btreemap_oracle() {
         let mut expected: Vec<MemtableEntry> = Vec::new();
         let mut seen_keys: std::collections::HashSet<Vec<u8>> = std::collections::HashSet::new();
 
-        for ((ck_bytes, _), entry) in oracle.range(
-            (prefix.clone(), Reverse(u64::MAX))..
-        ) {
+        for ((ck_bytes, _), entry) in oracle.range((prefix.clone(), Reverse(u64::MAX))..) {
             if !ck_bytes.starts_with(&prefix) || ck_bytes[prefix.len() - 1] != 0x00 {
                 // Check that the record_id portion matches
                 if entry.record_id() != record.as_bytes() {
@@ -593,13 +600,15 @@ fn test_100k_entries_match_btreemap_oracle() {
         let oracle_result = oracle
             .range((ck_bytes.clone(), Reverse(u64::MAX))..)
             .next()
-            .and_then(|((k, _), entry)| {
-                if k == &ck_bytes {
-                    Some(entry)
-                } else {
-                    None
-                }
-            });
+            .and_then(
+                |((k, _), entry)| {
+                    if k == &ck_bytes {
+                        Some(entry)
+                    } else {
+                        None
+                    }
+                },
+            );
 
         match (mt_result, oracle_result) {
             (Some(mt_entry), Some(oracle_entry)) => {

@@ -36,6 +36,13 @@ impl WalEntry {
         let total = 4 + body_size + 4;
         let mut buf = BytesMut::with_capacity(total);
 
+        self.encode_into(&mut buf);
+        buf.freeze()
+    }
+
+    pub fn encode_into(&self, buf: &mut BytesMut) {
+        let body_size = self.body_size();
+
         // entry_length
         buf.put_u32_le(body_size as u32);
 
@@ -58,8 +65,6 @@ impl WalEntry {
 
         let crc = crc32fast::hash(&buf[body_start..]);
         buf.put_u32_le(crc);
-
-        buf.freeze()
     }
 
     pub fn read_entry_length(data: &[u8]) -> FlushResult<u32> {
@@ -95,11 +100,10 @@ impl WalEntry {
         pos += 8;
 
         let entry_type_byte = body[pos];
-        let entry_type = EntryType::from_u8(entry_type_byte).map_err(|_| {
-            FlushError::CorruptedData {
+        let entry_type =
+            EntryType::from_u8(entry_type_byte).map_err(|_| FlushError::CorruptedData {
                 message: format!("unknown WAL entry type: {entry_type_byte}"),
-            }
-        })?;
+            })?;
         pos += 1;
 
         let (namespace, new_pos) = read_var_u16(body, pos)?;
@@ -122,9 +126,11 @@ impl WalEntry {
                 message: "WAL entry field length exceeds body".to_string(),
             });
         }
-        let idempotency_token = IdempotencyToken::from_bytes(&body[pos..pos + 24])
-            .map_err(|e| FlushError::CorruptedData {
-                message: format!("invalid idempotency token: {e}"),
+        let idempotency_token =
+            IdempotencyToken::from_bytes(&body[pos..pos + 24]).map_err(|e| {
+                FlushError::CorruptedData {
+                    message: format!("invalid idempotency token: {e}"),
+                }
             })?;
 
         Ok(Self {

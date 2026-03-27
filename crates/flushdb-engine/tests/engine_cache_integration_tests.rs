@@ -2,8 +2,8 @@ use bytes::Bytes;
 use tempfile::TempDir;
 
 use flushdb_engine::{
-    CacheConfig, Engine, EngineConfig, FlushConfig, ManifestConfig, MemtableConfig,
-    CompactionConfig, RangeReadOptions,
+    CacheConfig, CompactionConfig, Engine, EngineConfig, FlushConfig, ManifestConfig,
+    MemtableConfig, RangeReadOptions,
 };
 use flushdb_types::LocalFsBackend;
 use flushdb_wal::WalConfig;
@@ -60,7 +60,13 @@ async fn test_repeated_get_uses_cache() {
         let key = format!("key{:04}", i);
         let value = format!("value_{}", i);
         engine
-            .put(b"rec1", key.as_bytes(), Bytes::from(value), Bytes::new(), None)
+            .put(
+                b"rec1",
+                key.as_bytes(),
+                Bytes::from(value),
+                Bytes::new(),
+                None,
+            )
             .await
             .unwrap();
     }
@@ -91,7 +97,13 @@ async fn test_scan_populates_cache() {
         let key = format!("key{:04}", i);
         let value = format!("value_{}", i);
         engine
-            .put(b"rec1", key.as_bytes(), Bytes::from(value), Bytes::new(), None)
+            .put(
+                b"rec1",
+                key.as_bytes(),
+                Bytes::from(value),
+                Bytes::new(),
+                None,
+            )
             .await
             .unwrap();
     }
@@ -156,7 +168,13 @@ async fn test_full_lifecycle_with_cache() {
             let key = format!("key{:04}", i);
             let val = format!("val{}", i);
             engine
-                .put(b"rec1", key.as_bytes(), Bytes::from(val), Bytes::new(), None)
+                .put(
+                    b"rec1",
+                    key.as_bytes(),
+                    Bytes::from(val),
+                    Bytes::new(),
+                    None,
+                )
                 .await
                 .unwrap();
         }
@@ -204,7 +222,11 @@ async fn test_full_lifecycle_with_cache() {
     }
 }
 
-fn budget_test_config(dir: &TempDir, namespace: &str, budget: u32) -> (EngineConfig, LocalFsBackend) {
+fn budget_test_config(
+    dir: &TempDir,
+    namespace: &str,
+    budget: u32,
+) -> (EngineConfig, LocalFsBackend) {
     let storage_dir = dir.path().join("storage");
     std::fs::create_dir_all(&storage_dir).expect("create storage dir");
 
@@ -293,7 +315,10 @@ async fn test_budget_caps_point_reads() {
         // A second read of the same key should hit the cache (free) if it
         // was found on the first attempt.
         let result2 = engine.get(b"rec0000", b"key0000").await;
-        assert!(result2.is_ok(), "second get should also complete without error");
+        assert!(
+            result2.is_ok(),
+            "second get should also complete without error"
+        );
         let found_second_time = result2.unwrap();
 
         // If the key was found on the first attempt, the value must be correct

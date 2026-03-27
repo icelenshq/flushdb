@@ -1,9 +1,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use flushdb_wal::{
-    parse_segment_number, segment_filename, segment_path, FsyncMode, WalConfig,
-};
+use flushdb_wal::{parse_segment_number, segment_filename, segment_path, FsyncMode, WalConfig};
 
 #[test]
 fn test_default_config_values() {
@@ -33,10 +31,7 @@ fn test_segment_filename_large_number() {
 
 #[test]
 fn test_parse_segment_number_valid() {
-    assert_eq!(
-        parse_segment_number("segment-000000000042.wal"),
-        Some(42)
-    );
+    assert_eq!(parse_segment_number("segment-000000000042.wal"), Some(42));
 }
 
 #[test]
@@ -66,7 +61,11 @@ fn test_parse_segment_number_wrong_width() {
 fn test_segment_filename_roundtrip() {
     for n in [0, 1, 42, 100, 999_999_999_999] {
         let filename = segment_filename(n);
-        assert_eq!(parse_segment_number(&filename), Some(n), "roundtrip failed for {n}");
+        assert_eq!(
+            parse_segment_number(&filename),
+            Some(n),
+            "roundtrip failed for {n}"
+        );
     }
 }
 

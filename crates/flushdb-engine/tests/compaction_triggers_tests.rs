@@ -78,7 +78,10 @@ fn test_l0_trigger_fires_at_threshold() {
 
     let manifest = make_manifest_with_levels(l0, vec![], vec![], vec![]);
     let task = scheduler.check_l0_trigger(&manifest);
-    assert!(task.is_some(), "L0 trigger should fire with 5 SSTables (threshold=4)");
+    assert!(
+        task.is_some(),
+        "L0 trigger should fire with 5 SSTables (threshold=4)"
+    );
     let task = task.unwrap();
     assert_eq!(task.task_type, CompactionType::L0ToL1);
     assert_eq!(task.source_level, Level::L0);
@@ -167,15 +170,7 @@ fn test_l0_trigger_finds_overlapping_l1() {
 
     // L0 SSTables covering key range [b00, d00]
     let l0 = (0..5)
-        .map(|i| {
-            make_sst_meta(
-                &format!("l0_{i}"),
-                b"b00",
-                b"d00",
-                1024,
-                1000 + i,
-            )
-        })
+        .map(|i| make_sst_meta(&format!("l0_{i}"), b"b00", b"d00", 1024, 1000 + i))
         .collect();
 
     // L1 SSTables with non-overlapping ranges sorted by min_key
@@ -191,7 +186,11 @@ fn test_l0_trigger_finds_overlapping_l1() {
     let task = scheduler.check_l0_trigger(&manifest).unwrap();
 
     let target_ids: Vec<&str> = task.target_sstables.iter().map(|m| m.id.as_str()).collect();
-    assert_eq!(target_ids.len(), 2, "should find exactly 2 overlapping L1 SSTables");
+    assert_eq!(
+        target_ids.len(),
+        2,
+        "should find exactly 2 overlapping L1 SSTables"
+    );
     assert!(target_ids.contains(&"l1_1"));
     assert!(target_ids.contains(&"l1_2"));
 }
@@ -201,15 +200,7 @@ fn test_l0_trigger_no_l1_overlap() {
     let scheduler = CompactionScheduler::new(CompactionConfig::default());
 
     let l0 = (0..5)
-        .map(|i| {
-            make_sst_meta(
-                &format!("l0_{i}"),
-                b"a00",
-                b"b00",
-                1024,
-                1000 + i,
-            )
-        })
+        .map(|i| make_sst_meta(&format!("l0_{i}"), b"a00", b"b00", 1024, 1000 + i))
         .collect();
 
     // L1 SSTables with ranges entirely outside L0's [a00, b00]
@@ -242,7 +233,10 @@ fn test_l1_trigger_fires_when_oversize() {
 
     let manifest = make_manifest_with_levels(vec![], l1, vec![], vec![]);
     let task = scheduler.check_level_trigger(&manifest, Level::L1);
-    assert!(task.is_some(), "L1 trigger should fire when total size > max");
+    assert!(
+        task.is_some(),
+        "L1 trigger should fire when total size > max"
+    );
     let task = task.unwrap();
     assert_eq!(task.task_type, CompactionType::LevelToLevel);
     assert_eq!(task.source_level, Level::L1);
@@ -289,7 +283,10 @@ fn test_l2_trigger_fires_when_oversize() {
 
     let manifest = make_manifest_with_levels(vec![], vec![], l2, vec![]);
     let task = scheduler.check_level_trigger(&manifest, Level::L2);
-    assert!(task.is_some(), "L2 trigger should fire when total size > max");
+    assert!(
+        task.is_some(),
+        "L2 trigger should fire when total size > max"
+    );
     let task = task.unwrap();
     assert_eq!(task.task_type, CompactionType::LevelToLevel);
     assert_eq!(task.source_level, Level::L2);
@@ -333,9 +330,9 @@ fn test_level_trigger_finds_overlapping_targets() {
     ];
 
     let l2 = vec![
-        make_sst_meta("l2_0", b"a00", b"d00", 1024, 50),  // overlaps with l1_0
-        make_sst_meta("l2_1", b"e00", b"g00", 1024, 51),  // overlaps with l1_0
-        make_sst_meta("l2_2", b"p00", b"r00", 1024, 52),  // no overlap with l1_0
+        make_sst_meta("l2_0", b"a00", b"d00", 1024, 50), // overlaps with l1_0
+        make_sst_meta("l2_1", b"e00", b"g00", 1024, 51), // overlaps with l1_0
+        make_sst_meta("l2_2", b"p00", b"r00", 1024, 52), // no overlap with l1_0
     ];
 
     let manifest = make_manifest_with_levels(vec![], l1, l2, vec![]);
@@ -353,7 +350,10 @@ fn test_level_trigger_l0_returns_none() {
     let scheduler = CompactionScheduler::new(CompactionConfig::default());
     let manifest = make_manifest_with_levels(vec![], vec![], vec![], vec![]);
     let task = scheduler.check_level_trigger(&manifest, Level::L0);
-    assert!(task.is_none(), "L0 uses count trigger, not level size trigger");
+    assert!(
+        task.is_none(),
+        "L0 uses count trigger, not level size trigger"
+    );
 }
 
 #[test]
@@ -371,15 +371,7 @@ fn test_level_trigger_l3_returns_none() {
 fn test_write_stall_normal() {
     let scheduler = CompactionScheduler::new(CompactionConfig::default());
     let l0 = (0..4)
-        .map(|i| {
-            make_sst_meta(
-                &format!("l0_{i}"),
-                b"a00",
-                b"z00",
-                1024,
-                1000 + i,
-            )
-        })
+        .map(|i| make_sst_meta(&format!("l0_{i}"), b"a00", b"z00", 1024, 1000 + i))
         .collect();
 
     let manifest = make_manifest_with_levels(l0, vec![], vec![], vec![]);
@@ -395,15 +387,7 @@ fn test_write_stall_normal_below_slowdown() {
     let scheduler = CompactionScheduler::new(CompactionConfig::default());
     // 8 L0 SSTables: equal to slowdown trigger, not above it
     let l0 = (0..8)
-        .map(|i| {
-            make_sst_meta(
-                &format!("l0_{i}"),
-                b"a00",
-                b"z00",
-                1024,
-                1000 + i,
-            )
-        })
+        .map(|i| make_sst_meta(&format!("l0_{i}"), b"a00", b"z00", 1024, 1000 + i))
         .collect();
 
     let manifest = make_manifest_with_levels(l0, vec![], vec![], vec![]);
@@ -416,15 +400,7 @@ fn test_write_stall_slowdown() {
     let scheduler = CompactionScheduler::new(CompactionConfig::default());
     // 9 L0 SSTables: slowdown_trigger=8, so 9 > 8, delay_ms = 9 - 8 = 1
     let l0 = (0..9)
-        .map(|i| {
-            make_sst_meta(
-                &format!("l0_{i}"),
-                b"a00",
-                b"z00",
-                1024,
-                1000 + i,
-            )
-        })
+        .map(|i| make_sst_meta(&format!("l0_{i}"), b"a00", b"z00", 1024, 1000 + i))
         .collect();
 
     let manifest = make_manifest_with_levels(l0, vec![], vec![], vec![]);
@@ -448,15 +424,7 @@ fn test_write_stall_slowdown_progressive() {
 
     // 10 L0 SSTables: delay_ms = 10 - 8 = 2
     let l0_10: Vec<SSTableMeta> = (0..10)
-        .map(|i| {
-            make_sst_meta(
-                &format!("l0_{i}"),
-                b"a00",
-                b"z00",
-                1024,
-                1000 + i,
-            )
-        })
+        .map(|i| make_sst_meta(&format!("l0_{i}"), b"a00", b"z00", 1024, 1000 + i))
         .collect();
     let manifest_10 = make_manifest_with_levels(l0_10, vec![], vec![], vec![]);
     let status_10 = scheduler.write_stall_status(&manifest_10);
@@ -470,15 +438,7 @@ fn test_write_stall_slowdown_progressive() {
 
     // 11 L0 SSTables: delay_ms = 11 - 8 = 3
     let l0_11: Vec<SSTableMeta> = (0..11)
-        .map(|i| {
-            make_sst_meta(
-                &format!("l0_{i}"),
-                b"a00",
-                b"z00",
-                1024,
-                1000 + i,
-            )
-        })
+        .map(|i| make_sst_meta(&format!("l0_{i}"), b"a00", b"z00", 1024, 1000 + i))
         .collect();
     let manifest_11 = make_manifest_with_levels(l0_11, vec![], vec![], vec![]);
     let status_11 = scheduler.write_stall_status(&manifest_11);
@@ -496,15 +456,7 @@ fn test_write_stall_stopped() {
     let scheduler = CompactionScheduler::new(CompactionConfig::default());
     // 12 L0 SSTables: stop_trigger=12, so >= 12 => Stopped
     let l0 = (0..12)
-        .map(|i| {
-            make_sst_meta(
-                &format!("l0_{i}"),
-                b"a00",
-                b"z00",
-                1024,
-                1000 + i,
-            )
-        })
+        .map(|i| make_sst_meta(&format!("l0_{i}"), b"a00", b"z00", 1024, 1000 + i))
         .collect();
 
     let manifest = make_manifest_with_levels(l0, vec![], vec![], vec![]);
@@ -519,15 +471,7 @@ fn test_write_stall_stopped() {
 fn test_write_stall_stopped_above_threshold() {
     let scheduler = CompactionScheduler::new(CompactionConfig::default());
     let l0 = (0..15)
-        .map(|i| {
-            make_sst_meta(
-                &format!("l0_{i}"),
-                b"a00",
-                b"z00",
-                1024,
-                1000 + i,
-            )
-        })
+        .map(|i| make_sst_meta(&format!("l0_{i}"), b"a00", b"z00", 1024, 1000 + i))
         .collect();
 
     let manifest = make_manifest_with_levels(l0, vec![], vec![], vec![]);
@@ -570,15 +514,7 @@ fn test_check_triggers_priority_order() {
 
     // 5 L0 SSTables (triggers L0->L1)
     let l0 = (0..5)
-        .map(|i| {
-            make_sst_meta(
-                &format!("l0_{i}"),
-                b"a00",
-                b"z00",
-                1024,
-                1000 + i,
-            )
-        })
+        .map(|i| make_sst_meta(&format!("l0_{i}"), b"a00", b"z00", 1024, 1000 + i))
         .collect();
 
     // L1 oversize (triggers L1->L2)
@@ -611,15 +547,7 @@ fn test_check_triggers_multiple_levels() {
     let l2_max: u64 = 2_560 * 1024 * 1024;
 
     let l0 = (0..5)
-        .map(|i| {
-            make_sst_meta(
-                &format!("l0_{i}"),
-                b"a00",
-                b"z00",
-                1024,
-                1000 + i,
-            )
-        })
+        .map(|i| make_sst_meta(&format!("l0_{i}"), b"a00", b"z00", 1024, 1000 + i))
         .collect();
 
     let l1 = vec![
@@ -635,7 +563,11 @@ fn test_check_triggers_multiple_levels() {
     let manifest = make_manifest_with_levels(l0, l1, l2, vec![]);
     let tasks = scheduler.check_triggers(&manifest);
 
-    assert_eq!(tasks.len(), 3, "should have L0->L1, L1->L2, and L2->L3 tasks");
+    assert_eq!(
+        tasks.len(),
+        3,
+        "should have L0->L1, L1->L2, and L2->L3 tasks"
+    );
     assert_eq!(tasks[0].task_type, CompactionType::L0ToL1);
     assert_eq!(tasks[1].source_level, Level::L1);
     assert_eq!(tasks[1].target_level, Level::L2);
@@ -665,15 +597,7 @@ fn test_check_triggers_only_l0() {
     let scheduler = CompactionScheduler::new(CompactionConfig::default());
 
     let l0 = (0..5)
-        .map(|i| {
-            make_sst_meta(
-                &format!("l0_{i}"),
-                b"a00",
-                b"z00",
-                1024,
-                1000 + i,
-            )
-        })
+        .map(|i| make_sst_meta(&format!("l0_{i}"), b"a00", b"z00", 1024, 1000 + i))
         .collect();
 
     let manifest = make_manifest_with_levels(l0, vec![], vec![], vec![]);

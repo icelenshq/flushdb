@@ -56,12 +56,7 @@ impl SkipNode {
     }
 }
 
-fn compare_entries(
-    a_key: &CompositeKey,
-    a_seq: u64,
-    b_key: &CompositeKey,
-    b_seq: u64,
-) -> Ordering {
+fn compare_entries(a_key: &CompositeKey, a_seq: u64, b_key: &CompositeKey, b_seq: u64) -> Ordering {
     match a_key.cmp(b_key) {
         Ordering::Equal => b_seq.cmp(&a_seq),
         other => other,
@@ -279,7 +274,6 @@ impl SkipList {
             stop: StopCondition::RecordBoundary(record_id),
         }
     }
-
 }
 
 impl Default for SkipList {

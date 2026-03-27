@@ -1,8 +1,9 @@
 use std::path::PathBuf;
+use std::time::Duration;
 
 use flushdb_engine::{
-    CacheConfig, CompactionConfig, EngineConfig, FlushConfig, ManifestConfig, MemtableConfig,
-    SstConfig, WalConfig,
+    CacheConfig, CompactionConfig, EngineConfig, FlushConfig, FsyncMode, ManifestConfig,
+    MemtableConfig, SstConfig, WalConfig,
 };
 use flushdb_types::{FlushError, FlushResult};
 use serde::{Deserialize, Serialize};
@@ -62,8 +63,7 @@ pub struct StorageLayerConfig {
 
 impl StorageLayerConfig {
     pub fn default_ttl(&self) -> Option<std::time::Duration> {
-        self.default_ttl_ms
-            .map(std::time::Duration::from_millis)
+        self.default_ttl_ms.map(std::time::Duration::from_millis)
     }
 }
 
@@ -114,6 +114,18 @@ fn default_replication_factor() -> u32 {
     3
 }
 
+fn default_wal_fsync_mode() -> String {
+    "sync".to_string()
+}
+
+fn default_wal_group_commit_interval_us() -> u64 {
+    200
+}
+
+fn default_wal_batch_sync_interval_ms() -> u64 {
+    10
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NamespaceConfig {
     pub name: String,
@@ -141,6 +153,12 @@ pub struct NamespaceConfig {
     pub write_consistency: WriteConsistency,
     #[serde(default = "default_replication_factor")]
     pub replication_factor: u32,
+    #[serde(default = "default_wal_fsync_mode")]
+    pub wal_fsync_mode: String,
+    #[serde(default = "default_wal_group_commit_interval_us")]
+    pub wal_group_commit_interval_us: u64,
+    #[serde(default = "default_wal_batch_sync_interval_ms")]
+    pub wal_batch_sync_interval_ms: u64,
 }
 
 fn serde_default_s3_path_prefix() -> String {
@@ -173,6 +191,9 @@ impl NamespaceConfig {
             max_latency_slo_ms: default_max_slo(),
             write_consistency: default_write_consistency(),
             replication_factor: default_replication_factor(),
+            wal_fsync_mode: default_wal_fsync_mode(),
+            wal_group_commit_interval_us: default_wal_group_commit_interval_us(),
+            wal_batch_sync_interval_ms: default_wal_batch_sync_interval_ms(),
         };
         config.validate()?;
         Ok(config)
@@ -214,6 +235,12 @@ impl NamespaceConfig {
                 message: "target_latency_slo_ms: must be <= max_latency_slo_ms".to_string(),
             });
         }
+        parse_fsync_mode(&self.wal_fsync_mode)?;
+        if self.wal_batch_sync_interval_ms == 0 {
+            return Err(FlushError::InvalidArgument {
+                message: "wal_batch_sync_interval_ms: must be > 0".to_string(),
+            });
+        }
         self.validate_strategy()?;
         Ok(())
     }
@@ -246,13 +273,20 @@ impl NamespaceConfig {
     pub fn engine_config(&self, local_dir: PathBuf) -> EngineConfig {
         let bloom_bits = fp_rate_to_bits(self.bloom_filter_fp_rate);
         let sst_config = SstConfig::default().with_bloom_bits_per_key(bloom_bits);
+        let wal_fsync_mode = parse_fsync_mode(&self.wal_fsync_mode)
+            .expect("validated namespace config must contain a supported WAL fsync mode");
 
         EngineConfig {
             memtable_config: MemtableConfig {
                 size_threshold: self.memtable_size_threshold as usize,
                 ..Default::default()
             },
-            wal_config: WalConfig::default(),
+            wal_config: WalConfig {
+                fsync_mode: wal_fsync_mode,
+                group_commit_interval: Duration::from_micros(self.wal_group_commit_interval_us),
+                batch_sync_interval: Duration::from_millis(self.wal_batch_sync_interval_ms),
+                ..WalConfig::default()
+            },
             flush_config: FlushConfig {
                 sst_config,
                 ..Default::default()
@@ -297,4 +331,14 @@ impl NamespaceConfig {
 
 fn fp_rate_to_bits(fp: f64) -> u32 {
     ((-fp.ln() / (2.0_f64.ln().powi(2))).ceil()) as u32
+}
+
+fn parse_fsync_mode(mode: &str) -> FlushResult<FsyncMode> {
+    match mode {
+        "sync" => Ok(FsyncMode::Sync),
+        "batch_sync" => Ok(FsyncMode::BatchSync),
+        other => Err(FlushError::InvalidArgument {
+            message: format!("wal_fsync_mode: must be 'sync' or 'batch_sync', got '{other}'"),
+        }),
+    }
 }

@@ -662,8 +662,7 @@ async fn test_delete_match_keys_selective() {
     client.put_items(req).await.unwrap();
 
     // Delete only alpha and gamma
-    let del_req =
-        make_delete_request(ns, "rec-1", match_keys_predicate(vec![b"alpha", b"gamma"]));
+    let del_req = make_delete_request(ns, "rec-1", match_keys_predicate(vec![b"alpha", b"gamma"]));
     client.delete_items(del_req).await.unwrap();
 
     let get_req = make_get_request(ns, "rec-1", match_all_predicate(), None);
@@ -835,11 +834,7 @@ async fn test_range_query_exclusive_start() {
     let keys = sorted_keys(&resp.items);
     assert_eq!(
         keys,
-        vec![
-            b"k-003".to_vec(),
-            b"k-004".to_vec(),
-            b"k-005".to_vec(),
-        ]
+        vec![b"k-003".to_vec(), b"k-004".to_vec(), b"k-005".to_vec(),]
     );
 
     server.shutdown().await;
@@ -899,10 +894,7 @@ async fn test_range_query_exclusive_both() {
     let resp = client.get_items(get_req).await.unwrap().into_inner();
 
     let keys = sorted_keys(&resp.items);
-    assert_eq!(
-        keys,
-        vec![b"k-003".to_vec(), b"k-004".to_vec(),]
-    );
+    assert_eq!(keys, vec![b"k-003".to_vec(), b"k-004".to_vec(),]);
 
     server.shutdown().await;
 }
@@ -1167,21 +1159,11 @@ async fn test_partition_routing_record_isolation() {
     client.put_items(req1).await.unwrap();
     client.put_items(req2).await.unwrap();
 
-    let get_a = make_get_request(
-        ns,
-        "rec-A",
-        match_keys_predicate(vec![b"shared-key"]),
-        None,
-    );
+    let get_a = make_get_request(ns, "rec-A", match_keys_predicate(vec![b"shared-key"]), None);
     let resp_a = client.get_items(get_a).await.unwrap().into_inner();
     assert_eq!(resp_a.items[0].value, b"A-data");
 
-    let get_b = make_get_request(
-        ns,
-        "rec-B",
-        match_keys_predicate(vec![b"shared-key"]),
-        None,
-    );
+    let get_b = make_get_request(ns, "rec-B", match_keys_predicate(vec![b"shared-key"]), None);
     let resp_b = client.get_items(get_b).await.unwrap().into_inner();
     assert_eq!(resp_b.items[0].value, b"B-data");
 
@@ -1238,7 +1220,8 @@ async fn test_idempotency_token_dedup() {
     let token = make_idempotency_token(12345, [1u8; 16]);
 
     // First write with token
-    let req1 = make_put_request_with_token(ns, "rec-1", vec![("k1", b"first-write")], token.clone());
+    let req1 =
+        make_put_request_with_token(ns, "rec-1", vec![("k1", b"first-write")], token.clone());
     let resp1 = client.put_items(req1).await.unwrap().into_inner();
     assert!(resp1.version.is_some());
 
@@ -1355,9 +1338,7 @@ async fn test_pagination_full_traversal() {
     assert_eq!(all_items.len(), 20);
 
     let collected_keys = sorted_keys(&all_items);
-    let expected_keys: Vec<Vec<u8>> = (0..20)
-        .map(|i| format!("k-{i:03}").into_bytes())
-        .collect();
+    let expected_keys: Vec<Vec<u8>> = (0..20).map(|i| format!("k-{i:03}").into_bytes()).collect();
     assert_eq!(collected_keys, expected_keys);
 
     server.shutdown().await;
@@ -1580,11 +1561,8 @@ async fn test_selection_exclude_values_with_match_keys() {
     let server = TestServer::start_with_namespaces(vec![config]).await;
     let mut client = server.client.clone();
 
-    let req = make_put_request_with_metadata(
-        ns,
-        "rec-1",
-        vec![(b"key-a", b"value-a", b"metadata-a")],
-    );
+    let req =
+        make_put_request_with_metadata(ns, "rec-1", vec![(b"key-a", b"value-a", b"metadata-a")]);
     client.put_items(req).await.unwrap();
 
     let selection = Some(proto::Selection {
@@ -1593,12 +1571,7 @@ async fn test_selection_exclude_values_with_match_keys() {
         exclude_values: true,
         page_token: vec![],
     });
-    let get_req = make_get_request(
-        ns,
-        "rec-1",
-        match_keys_predicate(vec![b"key-a"]),
-        selection,
-    );
+    let get_req = make_get_request(ns, "rec-1", match_keys_predicate(vec![b"key-a"]), selection);
     let resp = client.get_items(get_req).await.unwrap().into_inner();
     assert_eq!(resp.items.len(), 1);
     assert!(resp.items[0].value.is_empty());
@@ -2214,7 +2187,7 @@ async fn test_edge_single_byte_key_and_value() {
         namespace: ns.to_string(),
         id: "r".to_string(),
         items: vec![proto::Item {
-            key: vec![0x41], // 'A'
+            key: vec![0x41],   // 'A'
             value: vec![0x42], // 'B'
             metadata: vec![],
             chunk: 0,
@@ -2310,12 +2283,7 @@ async fn test_edge_binary_keys() {
     };
     client.put_items(req).await.unwrap();
 
-    let get_req = make_get_request(
-        ns,
-        "rec-1",
-        match_keys_predicate(vec![&binary_key]),
-        None,
-    );
+    let get_req = make_get_request(ns, "rec-1", match_keys_predicate(vec![&binary_key]), None);
     let resp = client.get_items(get_req).await.unwrap().into_inner();
     assert_eq!(resp.items.len(), 1);
     assert_eq!(resp.items[0].key, binary_key);
@@ -2415,10 +2383,7 @@ async fn test_graceful_shutdown_preserves_data() {
         ));
 
         let ns_config = make_ns_config();
-        namespace_manager
-            .create_namespace(ns_config)
-            .await
-            .unwrap();
+        namespace_manager.create_namespace(ns_config).await.unwrap();
 
         let service = FlushDbService::new(namespace_manager.clone(), version_gen);
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -2468,10 +2433,7 @@ async fn test_graceful_shutdown_preserves_data() {
         ));
 
         let ns_config = make_ns_config();
-        namespace_manager
-            .create_namespace(ns_config)
-            .await
-            .unwrap();
+        namespace_manager.create_namespace(ns_config).await.unwrap();
 
         let service = FlushDbService::new(namespace_manager.clone(), version_gen);
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -2736,12 +2698,7 @@ async fn bench_sequential_read_throughput() {
     let start = Instant::now();
     for i in 0..count {
         let record_id = format!("rec-{i:04}");
-        let get_req = make_get_request(
-            ns,
-            &record_id,
-            match_keys_predicate(vec![b"data"]),
-            None,
-        );
+        let get_req = make_get_request(ns, &record_id, match_keys_predicate(vec![b"data"]), None);
         let resp = client.get_items(get_req).await.unwrap().into_inner();
         assert_eq!(resp.items.len(), 1);
     }
@@ -2854,12 +2811,8 @@ async fn bench_concurrent_read_throughput() {
             for i in 0..per_task {
                 let idx = t * per_task + i;
                 let record_id = format!("rec-{idx:04}");
-                let get_req = make_get_request(
-                    ns,
-                    &record_id,
-                    match_keys_predicate(vec![b"data"]),
-                    None,
-                );
+                let get_req =
+                    make_get_request(ns, &record_id, match_keys_predicate(vec![b"data"]), None);
                 let resp = c.get_items(get_req).await.unwrap().into_inner();
                 assert_eq!(resp.items.len(), 1);
             }
@@ -2939,12 +2892,8 @@ async fn bench_mixed_read_write_throughput() {
             } else {
                 // Read (80%)
                 let record_id = format!("rec-{:04}", op % count);
-                let get_req = make_get_request(
-                    ns,
-                    &record_id,
-                    match_keys_predicate(vec![b"data"]),
-                    None,
-                );
+                let get_req =
+                    make_get_request(ns, &record_id, match_keys_predicate(vec![b"data"]), None);
                 c.get_items(get_req).await.unwrap();
             }
         }));
@@ -2991,7 +2940,11 @@ async fn test_scenario_ecommerce_product_lifecycle() {
             (b"price", b"79.99", b"currency/usd"),
             (b"stock", b"150", b"counter"),
             (b"category", b"electronics", b"text/plain"),
-            (b"description", b"Premium wireless headphones with ANC", b"text/plain"),
+            (
+                b"description",
+                b"Premium wireless headphones with ANC",
+                b"text/plain",
+            ),
         ],
     );
     client.put_items(req).await.unwrap();
@@ -3002,38 +2955,21 @@ async fn test_scenario_ecommerce_product_lifecycle() {
     assert_eq!(resp.items.len(), 5);
 
     // 3. Update price (overwrite single field)
-    let update = make_put_request_with_metadata(
-        ns,
-        product_id,
-        vec![(b"price", b"69.99", b"currency/usd")],
-    );
+    let update =
+        make_put_request_with_metadata(ns, product_id, vec![(b"price", b"69.99", b"currency/usd")]);
     client.put_items(update).await.unwrap();
 
     // 4. Verify price changed, others unchanged
-    let get_price = make_get_request(
-        ns,
-        product_id,
-        match_keys_predicate(vec![b"price"]),
-        None,
-    );
+    let get_price = make_get_request(ns, product_id, match_keys_predicate(vec![b"price"]), None);
     let resp = client.get_items(get_price).await.unwrap().into_inner();
     assert_eq!(resp.items[0].value, b"69.99");
 
-    let get_name = make_get_request(
-        ns,
-        product_id,
-        match_keys_predicate(vec![b"name"]),
-        None,
-    );
+    let get_name = make_get_request(ns, product_id, match_keys_predicate(vec![b"name"]), None);
     let resp = client.get_items(get_name).await.unwrap().into_inner();
     assert_eq!(resp.items[0].value, b"Wireless Headphones");
 
     // 5. Delete description field only
-    let del = make_delete_request(
-        ns,
-        product_id,
-        match_keys_predicate(vec![b"description"]),
-    );
+    let del = make_delete_request(ns, product_id, match_keys_predicate(vec![b"description"]));
     client.delete_items(del).await.unwrap();
 
     // 6. Verify 4 fields remain
@@ -3095,7 +3031,11 @@ async fn test_scenario_batch_import_and_verify() {
             item_map[b"email".as_slice()],
             format!("user{i}@example.com").into_bytes()
         );
-        let expected_role = if i % 3 == 0 { b"admin".as_slice() } else { b"user" };
+        let expected_role = if i % 3 == 0 {
+            b"admin".as_slice()
+        } else {
+            b"user"
+        };
         assert_eq!(item_map[b"role".as_slice()], expected_role);
     }
 
@@ -3127,7 +3067,10 @@ async fn test_scenario_delete_and_reinsert_cycle() {
         // Verify deleted
         let get_req2 = make_get_request(ns, "rec-1", match_all_predicate(), None);
         let resp2 = client.get_items(get_req2).await.unwrap().into_inner();
-        assert!(resp2.items.is_empty(), "round {round}: should be empty after delete");
+        assert!(
+            resp2.items.is_empty(),
+            "round {round}: should be empty after delete"
+        );
     }
 
     server.shutdown().await;

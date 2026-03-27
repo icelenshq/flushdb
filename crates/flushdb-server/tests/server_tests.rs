@@ -5,16 +5,13 @@ use std::time::Duration;
 
 use flushdb_server::config::ServerConfig;
 use flushdb_server::server::FlushDbServer;
-use flushdb_types::LocalFsBackend;
+use flushdb_types::{FlushError, LocalFsBackend};
 
 async fn free_port() -> u16 {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind to random port");
-    listener
-        .local_addr()
-        .expect("local addr")
-        .port()
+    listener.local_addr().expect("local addr").port()
 }
 
 fn test_config(grpc_port: u16, metrics_port: u16, data_dir: &Path) -> ServerConfig {
@@ -45,6 +42,9 @@ fn test_config_defaults() {
     assert!(config.s3_bucket.is_none());
     assert_eq!(config.default_partition_count, 4);
     assert_eq!(config.default_memtable_size_mb, 64);
+    assert_eq!(config.default_wal_fsync_mode, "sync");
+    assert_eq!(config.default_wal_group_commit_interval_us, 200);
+    assert_eq!(config.default_wal_batch_sync_interval_ms, 10);
     assert_eq!(config.log_level, "info");
     assert_eq!(config.log_format, "json");
     assert_eq!(config.maintenance_interval_ms, 1000);
@@ -64,6 +64,9 @@ fn test_config_from_file() {
         "s3_bucket": "my-bucket",
         "default_partition_count": 8,
         "default_memtable_size_mb": 128,
+        "default_wal_fsync_mode": "batch_sync",
+        "default_wal_group_commit_interval_us": 300,
+        "default_wal_batch_sync_interval_ms": 15,
         "log_level": "debug",
         "log_format": "pretty",
         "maintenance_interval_ms": 500,
@@ -87,6 +90,9 @@ fn test_config_from_file() {
     assert_eq!(config.s3_bucket, Some("my-bucket".to_string()));
     assert_eq!(config.default_partition_count, 8);
     assert_eq!(config.default_memtable_size_mb, 128);
+    assert_eq!(config.default_wal_fsync_mode, "batch_sync");
+    assert_eq!(config.default_wal_group_commit_interval_us, 300);
+    assert_eq!(config.default_wal_batch_sync_interval_ms, 15);
     assert_eq!(config.log_level, "debug");
     assert_eq!(config.log_format, "pretty");
     assert_eq!(config.maintenance_interval_ms, 500);
@@ -105,7 +111,10 @@ fn test_config_from_file_with_defaults() {
 
     assert_eq!(config.grpc_listen_addr, defaults.grpc_listen_addr);
     assert_eq!(config.node_id, defaults.node_id);
-    assert_eq!(config.default_partition_count, defaults.default_partition_count);
+    assert_eq!(
+        config.default_partition_count,
+        defaults.default_partition_count
+    );
     assert_eq!(config.log_level, defaults.log_level);
 }
 
@@ -128,6 +137,24 @@ fn test_config_from_file_missing() {
 }
 
 #[test]
+fn test_config_from_file_rejects_zero_default_wal_batch_sync_interval() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let config_path = tmp.path().join("config.json");
+
+    let json = r#"{
+        "default_wal_batch_sync_interval_ms": 0
+    }"#;
+
+    std::fs::write(&config_path, json).expect("write config");
+
+    assert!(matches!(
+        ServerConfig::from_file(&config_path),
+        Err(FlushError::InvalidArgument { message })
+            if message == "default_wal_batch_sync_interval_ms: must be > 0"
+    ));
+}
+
+#[test]
 fn test_config_serde_round_trip() {
     let original = ServerConfig {
         grpc_listen_addr: "10.0.0.1:8080".parse().expect("parse"),
@@ -137,6 +164,9 @@ fn test_config_serde_round_trip() {
         s3_bucket: Some("prod-bucket".to_string()),
         default_partition_count: 16,
         default_memtable_size_mb: 256,
+        default_wal_fsync_mode: "batch_sync".to_string(),
+        default_wal_group_commit_interval_us: 400,
+        default_wal_batch_sync_interval_ms: 20,
         log_level: "warn".to_string(),
         log_format: "pretty".to_string(),
         maintenance_interval_ms: 2000,
@@ -148,15 +178,39 @@ fn test_config_serde_round_trip() {
     let deserialized: ServerConfig = serde_json::from_str(&serialized).expect("deserialize");
 
     assert_eq!(original.grpc_listen_addr, deserialized.grpc_listen_addr);
-    assert_eq!(original.metrics_listen_addr, deserialized.metrics_listen_addr);
+    assert_eq!(
+        original.metrics_listen_addr,
+        deserialized.metrics_listen_addr
+    );
     assert_eq!(original.node_id, deserialized.node_id);
     assert_eq!(original.data_dir, deserialized.data_dir);
     assert_eq!(original.s3_bucket, deserialized.s3_bucket);
-    assert_eq!(original.default_partition_count, deserialized.default_partition_count);
-    assert_eq!(original.default_memtable_size_mb, deserialized.default_memtable_size_mb);
+    assert_eq!(
+        original.default_partition_count,
+        deserialized.default_partition_count
+    );
+    assert_eq!(
+        original.default_memtable_size_mb,
+        deserialized.default_memtable_size_mb
+    );
+    assert_eq!(
+        original.default_wal_fsync_mode,
+        deserialized.default_wal_fsync_mode
+    );
+    assert_eq!(
+        original.default_wal_group_commit_interval_us,
+        deserialized.default_wal_group_commit_interval_us
+    );
+    assert_eq!(
+        original.default_wal_batch_sync_interval_ms,
+        deserialized.default_wal_batch_sync_interval_ms
+    );
     assert_eq!(original.log_level, deserialized.log_level);
     assert_eq!(original.log_format, deserialized.log_format);
-    assert_eq!(original.maintenance_interval_ms, deserialized.maintenance_interval_ms);
+    assert_eq!(
+        original.maintenance_interval_ms,
+        deserialized.maintenance_interval_ms
+    );
     assert_eq!(original.stats_interval_ms, deserialized.stats_interval_ms);
 }
 
@@ -187,9 +241,7 @@ async fn test_server_starts_and_stops() {
     let server = Arc::new(FlushDbServer::new(config, backend));
 
     let server_clone = server.clone();
-    let server_handle = tokio::spawn(async move {
-        server_clone.start().await
-    });
+    let server_handle = tokio::spawn(async move { server_clone.start().await });
 
     // Give the server a moment to bind
     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -217,14 +269,15 @@ async fn test_server_shutdown_is_idempotent() {
     let server = Arc::new(FlushDbServer::new(config, backend));
 
     let server_clone = server.clone();
-    let server_handle = tokio::spawn(async move {
-        server_clone.start().await
-    });
+    let server_handle = tokio::spawn(async move { server_clone.start().await });
 
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     server.shutdown().await.expect("first shutdown");
-    server.shutdown().await.expect("second shutdown should also succeed");
+    server
+        .shutdown()
+        .await
+        .expect("second shutdown should also succeed");
 
     let result = tokio::time::timeout(Duration::from_secs(5), server_handle)
         .await

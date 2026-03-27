@@ -1,7 +1,5 @@
 use bytes::Bytes;
-use flushdb_types::{
-    CompositeKey, EntryType, EntryValue, FlushError, FlushResult,
-};
+use flushdb_types::{CompositeKey, EntryType, EntryValue, FlushError, FlushResult};
 
 use super::types::CompressionType;
 use super::varint::decode_varint;
@@ -37,8 +35,7 @@ impl BlockEntryIterator {
         }
 
         let payload_len = decompressed.len() - 4;
-        let stored_crc =
-            u32::from_le_bytes(decompressed[payload_len..].try_into().unwrap());
+        let stored_crc = u32::from_le_bytes(decompressed[payload_len..].try_into().unwrap());
         let computed_crc = crc32fast::hash(&decompressed[..payload_len]);
 
         if stored_crc != computed_crc {
@@ -152,10 +149,15 @@ impl BlockEntryIterator {
                 }
                 let blob_id = Bytes::copy_from_slice(&value_data[2..2 + blob_id_len]);
                 let offset_start = 2 + blob_id_len;
-                let offset =
-                    u64::from_le_bytes(value_data[offset_start..offset_start + 8].try_into().unwrap());
+                let offset = u64::from_le_bytes(
+                    value_data[offset_start..offset_start + 8]
+                        .try_into()
+                        .unwrap(),
+                );
                 let size = u32::from_le_bytes(
-                    value_data[offset_start + 8..offset_start + 12].try_into().unwrap(),
+                    value_data[offset_start + 8..offset_start + 12]
+                        .try_into()
+                        .unwrap(),
                 );
                 EntryValue::BlobRef {
                     blob_id,
@@ -212,17 +214,15 @@ fn decompress(data: &[u8], compression: CompressionType) -> FlushResult<Vec<u8>>
         CompressionType::None => Ok(data.to_vec()),
         CompressionType::Snappy => {
             let mut decoder = snap::raw::Decoder::new();
-            decoder.decompress_vec(data).map_err(|e| {
-                FlushError::CorruptedData {
+            decoder
+                .decompress_vec(data)
+                .map_err(|e| FlushError::CorruptedData {
                     message: format!("decompression failed: {e}"),
-                }
-            })
+                })
         }
         CompressionType::Zstd => {
-            zstd::stream::decode_all(data).map_err(|e| {
-                FlushError::CorruptedData {
-                    message: format!("decompression failed: {e}"),
-                }
+            zstd::stream::decode_all(data).map_err(|e| FlushError::CorruptedData {
+                message: format!("decompression failed: {e}"),
             })
         }
     }

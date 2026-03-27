@@ -76,14 +76,12 @@ fn match_all_predicate() -> Option<proto::Predicate> {
 
 fn match_range_predicate(start: &[u8], end: &[u8]) -> Option<proto::Predicate> {
     Some(proto::Predicate {
-        predicate: Some(proto::predicate::Predicate::MatchRange(
-            proto::MatchRange {
-                start_key: start.to_vec(),
-                end_key: end.to_vec(),
-                start_inclusive: true,
-                end_inclusive: true,
-            },
-        )),
+        predicate: Some(proto::predicate::Predicate::MatchRange(proto::MatchRange {
+            start_key: start.to_vec(),
+            end_key: end.to_vec(),
+            start_inclusive: true,
+            end_inclusive: true,
+        })),
     })
 }
 
@@ -138,7 +136,12 @@ async fn collect_scan_stream(
 async fn test_get_match_keys_single() {
     let (service, _dir) = setup_with_data().await;
 
-    let req = make_get_request("test-ns", "record-1", match_keys_predicate(vec![b"b"]), None);
+    let req = make_get_request(
+        "test-ns",
+        "record-1",
+        match_keys_predicate(vec![b"b"]),
+        None,
+    );
     let resp = service
         .get_items(Request::new(req))
         .await
@@ -344,7 +347,10 @@ async fn test_exclude_values_preserves_keys() {
     );
 
     for item in &inner.items {
-        assert!(item.value.is_empty(), "value should be empty with exclude_values");
+        assert!(
+            item.value.is_empty(),
+            "value should be empty with exclude_values"
+        );
     }
 }
 
@@ -451,12 +457,7 @@ async fn test_scan_empty_record() {
 async fn test_get_nonexistent_namespace() {
     let (service, _dir) = setup_service().await;
 
-    let req = make_get_request(
-        "no-such-ns",
-        "record-1",
-        match_all_predicate(),
-        None,
-    );
+    let req = make_get_request("no-such-ns", "record-1", match_all_predicate(), None);
     let err = service
         .get_items(Request::new(req))
         .await

@@ -1,7 +1,5 @@
 use bytes::Bytes;
-use flushdb_types::{
-    CompositeKey, EntryType, FlushError, IdempotencyToken, MemtableEntry,
-};
+use flushdb_types::{CompositeKey, EntryType, FlushError, IdempotencyToken, MemtableEntry};
 use flushdb_wal::WalEntry;
 
 fn make_put_entry(seq: u64, ns: &[u8], rec: &[u8], key: &[u8], val: &[u8]) -> WalEntry {
@@ -26,8 +24,7 @@ fn test_encode_decode_put_entry() {
     let len = WalEntry::read_entry_length(&encoded).unwrap() as usize;
     let body = &encoded[4..4 + len];
     let crc_bytes = &encoded[4 + len..4 + len + 4];
-    let expected_crc =
-        u32::from_le_bytes([crc_bytes[0], crc_bytes[1], crc_bytes[2], crc_bytes[3]]);
+    let expected_crc = u32::from_le_bytes([crc_bytes[0], crc_bytes[1], crc_bytes[2], crc_bytes[3]]);
     WalEntry::validate_crc(body, expected_crc).unwrap();
     let decoded = WalEntry::decode_body(body).unwrap();
     assert_eq!(entry, decoded);
@@ -157,8 +154,7 @@ fn test_crc_validates_for_valid_entry() {
     let len = WalEntry::read_entry_length(&encoded).unwrap() as usize;
     let body = &encoded[4..4 + len];
     let crc_bytes = &encoded[4 + len..];
-    let expected_crc =
-        u32::from_le_bytes([crc_bytes[0], crc_bytes[1], crc_bytes[2], crc_bytes[3]]);
+    let expected_crc = u32::from_le_bytes([crc_bytes[0], crc_bytes[1], crc_bytes[2], crc_bytes[3]]);
     assert!(WalEntry::validate_crc(body, expected_crc).is_ok());
 }
 
@@ -171,8 +167,7 @@ fn test_crc_detects_corrupted_sequence_number() {
     encoded[4] ^= 0x01;
     let body = &encoded[4..4 + len];
     let crc_bytes = &encoded[4 + len..];
-    let expected_crc =
-        u32::from_le_bytes([crc_bytes[0], crc_bytes[1], crc_bytes[2], crc_bytes[3]]);
+    let expected_crc = u32::from_le_bytes([crc_bytes[0], crc_bytes[1], crc_bytes[2], crc_bytes[3]]);
     let result = WalEntry::validate_crc(body, expected_crc);
     assert!(matches!(result, Err(FlushError::CrcMismatch { .. })));
 }
@@ -187,8 +182,7 @@ fn test_crc_detects_corrupted_value() {
     encoded[body_end - 30] ^= 0xFF;
     let body = &encoded[4..body_end];
     let crc_bytes = &encoded[body_end..];
-    let expected_crc =
-        u32::from_le_bytes([crc_bytes[0], crc_bytes[1], crc_bytes[2], crc_bytes[3]]);
+    let expected_crc = u32::from_le_bytes([crc_bytes[0], crc_bytes[1], crc_bytes[2], crc_bytes[3]]);
     assert!(WalEntry::validate_crc(body, expected_crc).is_err());
 }
 
@@ -201,8 +195,7 @@ fn test_crc_detects_corrupted_namespace() {
     encoded[15] ^= 0xFF;
     let body = &encoded[4..4 + len];
     let crc_bytes = &encoded[4 + len..];
-    let expected_crc =
-        u32::from_le_bytes([crc_bytes[0], crc_bytes[1], crc_bytes[2], crc_bytes[3]]);
+    let expected_crc = u32::from_le_bytes([crc_bytes[0], crc_bytes[1], crc_bytes[2], crc_bytes[3]]);
     assert!(WalEntry::validate_crc(body, expected_crc).is_err());
 }
 
@@ -212,8 +205,7 @@ fn test_crc_covers_all_body_bytes() {
     let encoded = entry.encode();
     let len = WalEntry::read_entry_length(&encoded).unwrap() as usize;
     let crc_bytes = &encoded[4 + len..];
-    let expected_crc =
-        u32::from_le_bytes([crc_bytes[0], crc_bytes[1], crc_bytes[2], crc_bytes[3]]);
+    let expected_crc = u32::from_le_bytes([crc_bytes[0], crc_bytes[1], crc_bytes[2], crc_bytes[3]]);
 
     // Corrupt each byte position in the body and verify CRC detects it
     for i in 0..len {
