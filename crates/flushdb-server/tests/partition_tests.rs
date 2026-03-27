@@ -114,14 +114,14 @@ async fn test_put_active_succeeds() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let mut p = open_test_partition(tmp.path()).await;
     p.put(
-            b"record-1",
-            b"key-1",
-            Bytes::from_static(b"value-1"),
-            Bytes::new(),
-            IdempotencyToken::none(),
-        )
-        .await
-        .expect("put should succeed in Active");
+        b"record-1",
+        b"key-1",
+        Bytes::from_static(b"value-1"),
+        Bytes::new(),
+        IdempotencyToken::none(),
+    )
+    .await
+    .expect("put should succeed in Active");
 
     let result = p
         .get(b"record-1", b"key-1")
@@ -347,7 +347,10 @@ async fn test_multi_get_frozen_succeeds() {
     .expect("put");
     p.freeze().expect("freeze");
     let results = p
-        .multi_get(b"record-1", &[b"key-1".as_slice(), b"key-missing".as_slice()])
+        .multi_get(
+            b"record-1",
+            &[b"key-1".as_slice(), b"key-missing".as_slice()],
+        )
         .await
         .expect("multi_get in Frozen");
     assert!(results[0].is_some());
@@ -361,7 +364,10 @@ async fn test_wal_directory_created() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let p = open_test_partition(tmp.path()).await;
     let wal_dir = p.wal_dir().join("wal");
-    assert!(wal_dir.exists(), "WAL directory should exist at {wal_dir:?}");
+    assert!(
+        wal_dir.exists(),
+        "WAL directory should exist at {wal_dir:?}"
+    );
 }
 
 #[tokio::test]
@@ -449,10 +455,7 @@ async fn test_graceful_shutdown_sequence() {
     assert!(p.is_readable());
 
     // Can still read
-    let result = p
-        .get(b"rec-1", b"key-1")
-        .await
-        .expect("get in Frozen");
+    let result = p.get(b"rec-1", b"key-1").await.expect("get in Frozen");
     assert!(result.is_some());
 
     // Cannot write

@@ -2,12 +2,9 @@ use bytes::Bytes;
 use tempfile::TempDir;
 
 use flushdb_engine::{
-    FlushConfig, FlushPipeline, ManifestConfig, ManifestManager,
-    Memtable, MemtableConfig,
+    FlushConfig, FlushPipeline, ManifestConfig, ManifestManager, Memtable, MemtableConfig,
 };
-use flushdb_types::{
-    CompositeKey, EntryType, IdempotencyToken, LocalFsBackend, MemtableEntry,
-};
+use flushdb_types::{CompositeKey, EntryType, IdempotencyToken, LocalFsBackend, MemtableEntry};
 
 fn setup() -> (TempDir, LocalFsBackend) {
     let dir = TempDir::new().unwrap();
@@ -52,11 +49,7 @@ async fn test_flush_creates_sstable_and_updates_manifest() {
     manager.load_latest().await.unwrap();
     manager.acquire_writer_epoch().await.unwrap();
 
-    let pipeline = FlushPipeline::new(
-        FlushConfig::default(),
-        "test-ns".into(),
-        "flushdb".into(),
-    );
+    let pipeline = FlushPipeline::new(FlushConfig::default(), "test-ns".into(), "flushdb".into());
 
     let frozen = populated_memtable(10);
     let result = pipeline
@@ -93,7 +86,10 @@ async fn test_flush_updates_last_flushed_sequence() {
     let (min_seq, max_seq) = result.flushed_sequence_range;
     assert!(min_seq > 0, "min sequence should be positive");
     assert!(max_seq >= min_seq, "max_seq should be >= min_seq");
-    assert_eq!(result.generation_id, 0, "generation should match passed value");
+    assert_eq!(
+        result.generation_id, 0,
+        "generation should match passed value"
+    );
 }
 
 #[tokio::test]
@@ -209,8 +205,12 @@ fn test_should_freeze_by_size_threshold() {
     // Fill memtable past threshold
     for i in 0..20 {
         let key = format!("key{i:04}");
-        mt.insert(make_entry(b"rec1", key.as_bytes(), b"some_value_that_takes_space"))
-            .unwrap();
+        mt.insert(make_entry(
+            b"rec1",
+            key.as_bytes(),
+            b"some_value_that_takes_space",
+        ))
+        .unwrap();
     }
 
     assert!(

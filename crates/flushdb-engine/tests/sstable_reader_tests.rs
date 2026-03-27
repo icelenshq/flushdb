@@ -52,9 +52,7 @@ async fn write_and_open_with_dir(
         .unwrap()
 }
 
-async fn collect_all(
-    iter: &mut SstableIterator<'_, LocalFsBackend>,
-) -> Vec<BlockEntry> {
+async fn collect_all(iter: &mut SstableIterator<'_, LocalFsBackend>) -> Vec<BlockEntry> {
     let mut results = Vec::new();
     while let Some(entry) = iter.next().await.unwrap() {
         results.push(entry);
@@ -173,12 +171,7 @@ async fn test_write_read_all_compression_types() {
 
         let mut iter = SstableIterator::new(&reader);
         let all = collect_all(&mut iter).await;
-        assert_eq!(
-            all.len(),
-            50,
-            "failed for compression {:?}",
-            compression
-        );
+        assert_eq!(all.len(), 50, "failed for compression {:?}", compression);
 
         for (i, entry) in all.iter().enumerate() {
             assert_eq!(
@@ -330,7 +323,9 @@ async fn test_scan_subset() {
     assert_eq!(results.len(), 10);
     assert_eq!(results[0].composite_key, start_key);
     // end_key should NOT be included
-    assert!(results.iter().all(|e| e.composite_key.as_bytes() < end_key.as_bytes()));
+    assert!(results
+        .iter()
+        .all(|e| e.composite_key.as_bytes() < end_key.as_bytes()));
 }
 
 #[tokio::test]
@@ -376,7 +371,10 @@ async fn test_scan_empty_range() {
     reader.load_metadata().await.unwrap();
 
     let results = reader.scan(&start_key, Some(&end_key)).await.unwrap();
-    assert!(results.is_empty(), "start >= end should yield empty results");
+    assert!(
+        results.is_empty(),
+        "start >= end should yield empty results"
+    );
 }
 
 // --- Scan Single Record Test ---
@@ -389,8 +387,7 @@ async fn test_scan_single_record() {
     // Create entries: 5 items under "record_A", 5 under "record_B"
     let mut entries = Vec::new();
     for i in 0..5 {
-        let key =
-            CompositeKey::new(b"record_A", format!("item_{:04}", i).as_bytes()).unwrap();
+        let key = CompositeKey::new(b"record_A", format!("item_{:04}", i).as_bytes()).unwrap();
         entries.push(MemtableEntry::with_sequence(
             key,
             Bytes::from(format!("val_a_{i}")),
@@ -401,8 +398,7 @@ async fn test_scan_single_record() {
         ));
     }
     for i in 0..5 {
-        let key =
-            CompositeKey::new(b"record_B", format!("item_{:04}", i).as_bytes()).unwrap();
+        let key = CompositeKey::new(b"record_B", format!("item_{:04}", i).as_bytes()).unwrap();
         entries.push(MemtableEntry::with_sequence(
             key,
             Bytes::from(format!("val_b_{i}")),
@@ -447,7 +443,10 @@ async fn test_key_range_matches_first_and_last_block_keys() {
     reader.load_metadata().await.unwrap();
 
     let block_count = reader.block_count().unwrap();
-    assert!(block_count > 1, "need multiple blocks for this test, got {block_count}");
+    assert!(
+        block_count > 1,
+        "need multiple blocks for this test, got {block_count}"
+    );
 
     let (min, max) = reader.key_range().unwrap().unwrap();
 
@@ -496,7 +495,10 @@ async fn test_contains_record_absent() {
     // Bloom filter may have false positives, but "zzzzz_nonexistent" is very unlikely to match
     let result = reader.contains_record(b"zzzzz_nonexistent").unwrap();
     // We can't guarantee false here due to bloom FP, but for a well-sized filter this is safe
-    assert!(!result, "expected absent record to not be contained by bloom filter");
+    assert!(
+        !result,
+        "expected absent record to not be contained by bloom filter"
+    );
 }
 
 // --- Dedup Tests ---

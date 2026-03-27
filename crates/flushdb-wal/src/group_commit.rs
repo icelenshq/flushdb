@@ -16,8 +16,33 @@ struct PendingWrite {
     notifier: oneshot::Sender<FlushResult<()>>,
 }
 
+struct PendingBatch {
+    entries: Vec<WalEntry>,
+    notifier: oneshot::Sender<FlushResult<()>>,
+}
+
+enum PendingCommit {
+    Single(PendingWrite),
+    Batch(PendingBatch),
+}
+
+impl PendingCommit {
+    fn into_parts(self) -> (Vec<WalEntry>, Vec<oneshot::Sender<FlushResult<()>>>, usize) {
+        match self {
+            Self::Single(pending) => {
+                let bytes = pending.entry.total_size();
+                (vec![pending.entry], vec![pending.notifier], bytes)
+            }
+            Self::Batch(batch) => {
+                let bytes = batch.entries.iter().map(WalEntry::total_size).sum();
+                (batch.entries, vec![batch.notifier], bytes)
+            }
+        }
+    }
+}
+
 pub struct GroupCommitBuffer {
-    sender: mpsc::Sender<PendingWrite>,
+    sender: mpsc::Sender<PendingCommit>,
 }
 
 pub struct GroupCommitHandle {
@@ -30,7 +55,7 @@ impl GroupCommitBuffer {
         config: WalConfig,
         current_segment: Arc<AtomicU64>,
     ) -> (Self, GroupCommitHandle) {
-        let (tx, rx) = mpsc::channel::<PendingWrite>(4096);
+        let (tx, rx) = mpsc::channel::<PendingCommit>(4096);
 
         let join_handle = tokio::spawn(commit_loop(writer, rx, config, current_segment));
 
@@ -41,16 +66,40 @@ impl GroupCommitBuffer {
 
     pub async fn submit(&self, entry: WalEntry) -> FlushResult<DurabilityNotification> {
         let (tx, rx) = oneshot::channel();
-        let pending = PendingWrite {
+        let pending = PendingCommit::Single(PendingWrite {
             entry,
             notifier: tx,
-        };
-        self.sender.send(pending).await.map_err(|_| FlushError::Io(
-            std::io::Error::new(
+        });
+        self.sender.send(pending).await.map_err(|_| {
+            FlushError::Io(std::io::Error::new(
                 std::io::ErrorKind::BrokenPipe,
                 "group commit loop has shut down",
-            ),
-        ))?;
+            ))
+        })?;
+        Ok(rx)
+    }
+
+    pub async fn submit_batch(
+        &self,
+        entries: Vec<WalEntry>,
+    ) -> FlushResult<DurabilityNotification> {
+        if entries.is_empty() {
+            let (tx, rx) = oneshot::channel();
+            let _ = tx.send(Ok(()));
+            return Ok(rx);
+        }
+
+        let (tx, rx) = oneshot::channel();
+        let pending = PendingCommit::Batch(PendingBatch {
+            entries,
+            notifier: tx,
+        });
+        self.sender.send(pending).await.map_err(|_| {
+            FlushError::Io(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "group commit loop has shut down",
+            ))
+        })?;
         Ok(rx)
     }
 }
@@ -61,17 +110,13 @@ impl GroupCommitHandle {
         // which signals the commit loop to drain and exit.
         self.join_handle
             .await
-            .map_err(|e| {
-                FlushError::Io(std::io::Error::other(
-                    e.to_string(),
-                ))
-            })?
+            .map_err(|e| FlushError::Io(std::io::Error::other(e.to_string())))?
     }
 }
 
 async fn commit_loop(
     mut writer: WalWriter,
-    mut rx: mpsc::Receiver<PendingWrite>,
+    mut rx: mpsc::Receiver<PendingCommit>,
     config: WalConfig,
     current_segment: Arc<AtomicU64>,
 ) -> FlushResult<()> {
@@ -94,7 +139,7 @@ async fn commit_loop(
         };
 
         let first = match first {
-            Some(pw) => pw,
+            Some(pending) => pending,
             None => {
                 // Channel closed - sync remaining data and exit
                 if has_unsynced {
@@ -105,9 +150,7 @@ async fn commit_loop(
         };
 
         // Collect batch
-        let mut entries = vec![first.entry];
-        let mut notifiers = vec![first.notifier];
-        let mut batch_bytes = entries[0].total_size();
+        let (mut entries, mut notifiers, mut batch_bytes) = first.into_parts();
         let batch_start = Instant::now();
 
         loop {
@@ -118,10 +161,11 @@ async fn commit_loop(
                 break;
             }
             match rx.try_recv() {
-                Ok(pw) => {
-                    batch_bytes += pw.entry.total_size();
-                    entries.push(pw.entry);
-                    notifiers.push(pw.notifier);
+                Ok(pending) => {
+                    let (next_entries, next_notifiers, next_bytes) = pending.into_parts();
+                    batch_bytes += next_bytes;
+                    entries.extend(next_entries);
+                    notifiers.extend(next_notifiers);
                 }
                 Err(_) => break,
             }
@@ -129,23 +173,18 @@ async fn commit_loop(
 
         // Write batch via spawn_blocking (sync I/O)
         let do_fsync = config.fsync_mode == FsyncMode::Sync;
-        let (returned_writer, write_result) =
-            tokio::task::spawn_blocking(move || {
-                let result = (|| -> FlushResult<()> {
-                    writer.append_batch(&mut entries)?;
-                    if do_fsync {
-                        writer.sync()?;
-                    }
-                    Ok(())
-                })();
-                (writer, result)
-            })
-            .await
-            .map_err(|e| {
-                FlushError::Io(std::io::Error::other(
-                    e.to_string(),
-                ))
-            })?;
+        let (returned_writer, write_result) = tokio::task::spawn_blocking(move || {
+            let result = (|| -> FlushResult<()> {
+                writer.append_batch(&mut entries)?;
+                if do_fsync {
+                    writer.sync()?;
+                }
+                Ok(())
+            })();
+            (writer, result)
+        })
+        .await
+        .map_err(|e| FlushError::Io(std::io::Error::other(e.to_string())))?;
 
         writer = returned_writer;
         current_segment.store(writer.current_segment_number(), Ordering::Relaxed);
@@ -162,9 +201,7 @@ async fn commit_loop(
             Err(e) => {
                 let msg = e.to_string();
                 for notifier in notifiers {
-                    let _ = notifier.send(Err(FlushError::Io(std::io::Error::other(
-                        msg.clone(),
-                    ))));
+                    let _ = notifier.send(Err(FlushError::Io(std::io::Error::other(msg.clone()))));
                 }
                 return write_result;
             }
@@ -178,11 +215,7 @@ async fn do_sync(mut writer: WalWriter) -> FlushResult<WalWriter> {
         (writer, result)
     })
     .await
-    .map_err(|e| {
-        FlushError::Io(std::io::Error::other(
-            e.to_string(),
-        ))
-    })?;
+    .map_err(|e| FlushError::Io(std::io::Error::other(e.to_string())))?;
     result?;
     Ok(w)
 }

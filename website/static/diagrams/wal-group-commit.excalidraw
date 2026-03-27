@@ -253,14 +253,14 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "text": "Write 3",
+      "text": "Batch [3,4,5]",
       "fontSize": 16,
       "fontFamily": 1,
       "textAlign": "center",
       "verticalAlign": "middle",
       "autoResize": true,
       "containerId": "write3_box",
-      "originalText": "Write 3",
+      "originalText": "Batch [3,4,5]",
       "lineHeight": 1.25
     },
     {
@@ -318,14 +318,14 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "text": "Write 4",
+      "text": "Write 6",
       "fontSize": 16,
       "fontFamily": 1,
       "textAlign": "center",
       "verticalAlign": "middle",
       "autoResize": true,
       "containerId": "write4_box",
-      "originalText": "Write 4",
+      "originalText": "Write 6",
       "lineHeight": 1.25
     },
     {

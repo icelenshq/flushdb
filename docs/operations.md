@@ -3,7 +3,7 @@
 ## Quick Start
 
 ```bash
-docker compose up -d
+docker compose --profile flushdb up -d
 ```
 
 This starts MinIO (S3-compatible storage) on port 9000 and flushdb-server on port 50051 (gRPC) and 9090 (Prometheus metrics). The `minio-init` service creates the required bucket automatically.
@@ -15,8 +15,10 @@ This starts MinIO (S3-compatible storage) on port 9000 and flushdb-server on por
 | gRPC address | `0.0.0.0:50051` |
 | S3 bucket | `flushdb` |
 | Node ID | `1` |
-| Default namespace | `ecommerce` (4 partitions) |
+| Default namespace | `ecommerce` (8 partitions) |
 | Memtable size | 32 MB |
+| WAL fsync mode | `batch_sync` |
+| WAL batch sync interval | `10ms` |
 
 ### Resource Limits
 
@@ -47,7 +49,7 @@ FLUSHDB_GRPC_LISTEN_ADDR=0.0.0.0:50051 \
 FLUSHDB_S3_BUCKET=flushdb \
 FLUSHDB_NODE_ID=1 \
 FLUSHDB_DATA_DIR=/tmp/flushdb-data \
-FLUSHDB_DEFAULT_NAMESPACES=ecommerce:4 \
+FLUSHDB_DEFAULT_NAMESPACES=ecommerce:8 \
 FLUSHDB_DEFAULT_MEMTABLE_SIZE_MB=32 \
 AWS_ENDPOINT_URL=http://localhost:9000 \
 AWS_ACCESS_KEY_ID=minioadmin \
@@ -75,10 +77,15 @@ docker build --target demo -t flushdb-demo .
 | `FLUSHDB_DATA_DIR` | Local data directory (WAL, cache) | `/data` |
 | `FLUSHDB_DEFAULT_NAMESPACES` | `name:partitions` pairs, comma-separated | — |
 | `FLUSHDB_DEFAULT_MEMTABLE_SIZE_MB` | Memtable size before flush | `32` |
+| `FLUSHDB_DEFAULT_WAL_FSYNC_MODE` | WAL fsync mode (`sync` or `batch_sync`) | `sync` |
+| `FLUSHDB_DEFAULT_WAL_GROUP_COMMIT_INTERVAL_US` | Group commit interval in microseconds | `200` |
+| `FLUSHDB_DEFAULT_WAL_BATCH_SYNC_INTERVAL_MS` | Batch sync fsync interval in milliseconds. Must be `> 0`. | `10` |
 | `AWS_ENDPOINT_URL` | S3 endpoint (for MinIO) | — |
 | `AWS_ACCESS_KEY_ID` | S3 access key | — |
 | `AWS_SECRET_ACCESS_KEY` | S3 secret key | — |
 | `AWS_REGION` | S3 region | `us-east-1` |
+
+`FLUSHDB_DEFAULT_WAL_BATCH_SYNC_INTERVAL_MS` and the per-namespace `wal_batch_sync_interval_ms` setting must be positive. A value of `0` is rejected during config validation.
 
 ---
 
@@ -168,22 +175,25 @@ docker compose run --rm flushdb-demo bench <workload> --duration 60 --concurrenc
 
 ### Cassandra Comparison
 
-The `benchmark` Docker Compose profile starts Cassandra alongside flushdb with **equal resource limits** (2 CPUs, 1 GB each):
+Use the sequential Docker-only benchmark runner:
 
 ```bash
-# Start both databases
-docker compose --profile benchmark up -d
-
-# Wait for Cassandra (~30s), then run
-docker compose run --rm flushdb-demo bench ingest --products 50000 --concurrency 8
-docker compose run --rm flushdb-demo bench compare --duration 60 --concurrency 8
+./scripts/benchmark.sh --duration 30 --warmup 5
 ```
+
+The script runs a 10-step ladder (`1,000` to `100,000` seeded products) measuring both backends sequentially. Each step: seeds data, runs the `compare` workload against flushdb (saving results), tears down, then runs against Cassandra (loading the saved results for comparison). Artifacts (JSON snapshots, logs, CSV manifest) are saved to `--output-dir`.
+
+The `compare` workload now operates in two phases via `--phase`:
+- `--phase flushdb` — benchmarks flushdb only, writes results to `--output`
+- `--phase cassandra` — benchmarks Cassandra only, loads flushdb results from `--flushdb-results` for comparison
 
 **Fair testing protocol:**
 - Equal resources (2 CPUs, 1 GB per database)
-- Warmup phase (default 10s) to warm JVM/connection pools
-- Identical workload (same RNG seed for both)
-- Sequential measurement (no resource contention)
+- MinIO isolated to the flushdb phase (1 CPU, 512 MB)
+- Docker-only benchmark client (`flushdb-demo`)
+- Warmup phase before each measured backend phase
+- Identical workload for each scale step
+- Sequential measurement with teardown between phases
 
 ### Metrics
 

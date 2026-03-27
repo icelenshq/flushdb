@@ -508,14 +508,23 @@ async fn test_put_items_batch_with_token_persists_all_items() {
         .expect("batch put should succeed");
 
     // ALL three items must be persisted
-    for (key, expected_val) in [(b"key-a".as_slice(), b"val-a".as_slice()), (b"key-b", b"val-b"), (b"key-c", b"val-c")] {
+    for (key, expected_val) in [
+        (b"key-a".as_slice(), b"val-a".as_slice()),
+        (b"key-b", b"val-b"),
+        (b"key-c", b"val-c"),
+    ] {
         let result = service
             .namespace_manager
             .get("test-ns", "record-1", key)
             .await
             .expect("get should succeed")
             .expect("item should exist");
-        assert_eq!(result.value.as_ref(), expected_val, "item {:?} mismatch", key);
+        assert_eq!(
+            result.value.as_ref(),
+            expected_val,
+            "item {:?} mismatch",
+            key
+        );
     }
 }
 
@@ -546,7 +555,54 @@ async fn test_put_items_batch_retry_is_idempotent() {
         .expect("retry should succeed as idempotent");
 
     // Items should still have original values
-    for (key, expected_val) in [(b"key-a".as_slice(), b"val-a".as_slice()), (b"key-b", b"val-b")] {
+    for (key, expected_val) in [
+        (b"key-a".as_slice(), b"val-a".as_slice()),
+        (b"key-b", b"val-b"),
+    ] {
+        let result = service
+            .namespace_manager
+            .get("test-ns", "record-1", key)
+            .await
+            .expect("get should succeed")
+            .expect("item should exist");
+        assert_eq!(result.value.as_ref(), expected_val);
+    }
+}
+
+#[tokio::test]
+async fn test_put_items_partial_retry_writes_missing_items() {
+    let (service, _dir) = setup_service().await;
+    let token = make_proto_token(2500, 0x77);
+
+    service
+        .put_items(Request::new(proto::PutItemsRequest {
+            namespace: "test-ns".to_string(),
+            id: "record-1".to_string(),
+            items: vec![make_item(b"key-a", b"val-a", b"")],
+            idempotency_token: Some(token.clone()),
+        }))
+        .await
+        .expect("initial partial put");
+
+    service
+        .put_items(Request::new(proto::PutItemsRequest {
+            namespace: "test-ns".to_string(),
+            id: "record-1".to_string(),
+            items: vec![
+                make_item(b"key-a", b"val-a", b""),
+                make_item(b"key-b", b"val-b", b""),
+                make_item(b"key-c", b"val-c", b""),
+            ],
+            idempotency_token: Some(token),
+        }))
+        .await
+        .expect("retry should write remaining items");
+
+    for (key, expected_val) in [
+        (b"key-a".as_slice(), b"val-a".as_slice()),
+        (b"key-b", b"val-b"),
+        (b"key-c", b"val-c"),
+    ] {
         let result = service
             .namespace_manager
             .get("test-ns", "record-1", key)

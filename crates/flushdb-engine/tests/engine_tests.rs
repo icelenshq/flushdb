@@ -2,8 +2,8 @@ use bytes::Bytes;
 use tempfile::TempDir;
 
 use flushdb_engine::{
-    CacheConfig, Engine, EngineConfig, FlushConfig, Level, ManifestConfig, MemtableConfig,
-    CompactionConfig, RangeReadOptions, WriteStallStatus,
+    CacheConfig, CompactionConfig, Engine, EngineConfig, FlushConfig, Level, ManifestConfig,
+    MemtableConfig, PutBatchItem, RangeReadOptions, WriteStallStatus,
 };
 use flushdb_types::{IdempotencyToken, LocalFsBackend};
 use flushdb_wal::WalConfig;
@@ -36,6 +36,29 @@ fn test_config(dir: &TempDir, namespace: &str) -> (EngineConfig, LocalFsBackend)
         local_dir: dir.path().to_path_buf(),
     };
     (config, backend)
+}
+
+fn wal_file_count(dir: &TempDir) -> usize {
+    std::fs::read_dir(dir.path().join("wal"))
+        .unwrap()
+        .filter(|entry| {
+            entry
+                .as_ref()
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .ends_with(".wal")
+        })
+        .count()
+}
+
+fn wal_files(dir: &TempDir) -> Vec<String> {
+    let mut files: Vec<String> = std::fs::read_dir(dir.path().join("wal"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    files.sort();
+    files
 }
 
 #[tokio::test]
@@ -85,6 +108,7 @@ async fn test_put_multiple_entries() {
             )
             .await
             .unwrap();
+        tokio::task::yield_now().await;
     }
 
     for i in 0..10u32 {
@@ -94,6 +118,161 @@ async fn test_put_multiple_entries() {
         assert!(result.is_some(), "key {} not found", key);
         assert_eq!(result.unwrap().value, Bytes::from(expected_value));
     }
+}
+
+#[tokio::test]
+async fn test_put_batch_preserves_request_order_for_duplicate_keys() {
+    let dir = TempDir::new().unwrap();
+    let (config, backend) = test_config(&dir, "test-ns");
+    let mut engine = Engine::open(backend, config).await.unwrap();
+
+    let inserted = engine
+        .put_batch(
+            b"rec1",
+            vec![
+                PutBatchItem {
+                    item_key: Bytes::from_static(b"key1"),
+                    value: Bytes::from_static(b"v1"),
+                    metadata: Bytes::new(),
+                    idempotency_token: IdempotencyToken::none(),
+                },
+                PutBatchItem {
+                    item_key: Bytes::from_static(b"key1"),
+                    value: Bytes::from_static(b"v2"),
+                    metadata: Bytes::new(),
+                    idempotency_token: IdempotencyToken::none(),
+                },
+                PutBatchItem {
+                    item_key: Bytes::from_static(b"key2"),
+                    value: Bytes::from_static(b"v3"),
+                    metadata: Bytes::new(),
+                    idempotency_token: IdempotencyToken::none(),
+                },
+            ],
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(inserted, 3);
+    let result = engine.get(b"rec1", b"key1").await.unwrap().unwrap();
+    assert_eq!(result.value, Bytes::from_static(b"v2"));
+}
+
+#[tokio::test]
+async fn test_put_batch_flushes_incrementally_on_active_memtable_threshold() {
+    let dir = TempDir::new().unwrap();
+    let storage_dir = dir.path().join("storage");
+    std::fs::create_dir_all(&storage_dir).unwrap();
+
+    let backend = LocalFsBackend::new(storage_dir);
+    let config = EngineConfig {
+        memtable_config: MemtableConfig {
+            size_threshold: 256,
+            max_frozen_count: 3,
+            memtable_memory_limit: 1_000_000,
+        },
+        wal_config: WalConfig::default(),
+        flush_config: FlushConfig {
+            sst_config: flushdb_engine::sstable::types::SstConfig::default(),
+            max_frozen_count: 3,
+            flush_trigger_size: 256,
+            flush_trigger_age: std::time::Duration::from_secs(3600),
+        },
+        compaction_config: CompactionConfig {
+            l0_compaction_trigger: 1000,
+            l0_slowdown_trigger: 1001,
+            l0_stop_trigger: 1002,
+            ..CompactionConfig::default()
+        },
+        manifest_config: ManifestConfig {
+            base_path: "flushdb".to_string(),
+            ..ManifestConfig::default()
+        },
+        cache_config: CacheConfig::default(),
+        namespace: "batch-threshold-ns".to_string(),
+        local_dir: dir.path().to_path_buf(),
+    };
+    let mut engine = Engine::open(backend, config).await.unwrap();
+
+    let items = (0..8u32)
+        .map(|i| PutBatchItem {
+            item_key: Bytes::from(format!("key{i:04}")),
+            value: Bytes::from(vec![0u8; 96]),
+            metadata: Bytes::new(),
+            idempotency_token: IdempotencyToken::none(),
+        })
+        .collect();
+
+    let inserted = engine.put_batch(b"rec1", items).await.unwrap();
+    assert_eq!(inserted, 8);
+    assert!(
+        engine.l0_count() > 1,
+        "batch inserts should freeze/flush multiple times once the active memtable crosses the threshold"
+    );
+}
+
+#[tokio::test]
+async fn test_put_batch_does_not_leave_memory_backpressure_for_next_write() {
+    let dir = TempDir::new().unwrap();
+    let storage_dir = dir.path().join("storage");
+    std::fs::create_dir_all(&storage_dir).unwrap();
+
+    let backend = LocalFsBackend::new(storage_dir);
+    let config = EngineConfig {
+        memtable_config: MemtableConfig {
+            size_threshold: 1_000_000,
+            max_frozen_count: 3,
+            memtable_memory_limit: 256,
+        },
+        wal_config: WalConfig::default(),
+        flush_config: FlushConfig {
+            sst_config: flushdb_engine::sstable::types::SstConfig::default(),
+            max_frozen_count: 3,
+            flush_trigger_size: 1_000_000,
+            flush_trigger_age: std::time::Duration::from_secs(3600),
+        },
+        compaction_config: CompactionConfig {
+            l0_compaction_trigger: 1000,
+            l0_slowdown_trigger: 1001,
+            l0_stop_trigger: 1002,
+            ..CompactionConfig::default()
+        },
+        manifest_config: ManifestConfig {
+            base_path: "flushdb".to_string(),
+            ..ManifestConfig::default()
+        },
+        cache_config: CacheConfig::default(),
+        namespace: "batch-memory-ns".to_string(),
+        local_dir: dir.path().to_path_buf(),
+    };
+    let mut engine = Engine::open(backend, config).await.unwrap();
+
+    let items = (0..6u32)
+        .map(|i| PutBatchItem {
+            item_key: Bytes::from(format!("key{i:04}")),
+            value: Bytes::from(vec![0u8; 96]),
+            metadata: Bytes::new(),
+            idempotency_token: IdempotencyToken::none(),
+        })
+        .collect();
+
+    let inserted = engine.put_batch(b"rec1", items).await.unwrap();
+    assert_eq!(inserted, 6);
+    assert!(
+        engine.l0_count() > 0,
+        "batch writes should flush once they hit memtable memory pressure instead of pushing the pressure onto the next request"
+    );
+
+    engine
+        .put(
+            b"rec1",
+            b"followup",
+            Bytes::from_static(b"ok"),
+            Bytes::new(),
+            None,
+        )
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -177,12 +356,21 @@ async fn test_scan_after_delete_range() {
     for i in 0..10u32 {
         let key = format!("key{:04}", i);
         engine
-            .put(b"rec1", key.as_bytes(), Bytes::from("val"), Bytes::new(), None)
+            .put(
+                b"rec1",
+                key.as_bytes(),
+                Bytes::from("val"),
+                Bytes::new(),
+                None,
+            )
             .await
             .unwrap();
     }
 
-    engine.delete_range(b"rec1", b"key0003", b"key0007").await.unwrap();
+    engine
+        .delete_range(b"rec1", b"key0003", b"key0007")
+        .await
+        .unwrap();
 
     let result = engine
         .scan(b"rec1", None, None, RangeReadOptions::default())
@@ -190,7 +378,11 @@ async fn test_scan_after_delete_range() {
         .unwrap();
 
     // Range-deleted keys should be excluded from scan as well
-    let keys: Vec<Vec<u8>> = result.entries.iter().map(|e| e.composite_key.item_key().to_vec()).collect();
+    let keys: Vec<Vec<u8>> = result
+        .entries
+        .iter()
+        .map(|e| e.composite_key.item_key().to_vec())
+        .collect();
     assert!(!keys.contains(&b"key0003".to_vec()));
     assert!(!keys.contains(&b"key0005".to_vec()));
     assert!(!keys.contains(&b"key0006".to_vec()));
@@ -580,7 +772,10 @@ async fn test_write_stall_normal_initially() {
     let (config, backend) = test_config(&dir, "test-ns");
     let engine = Engine::open(backend, config).await.unwrap();
 
-    assert!(matches!(engine.write_stall_status(), WriteStallStatus::Normal));
+    assert!(matches!(
+        engine.write_stall_status(),
+        WriteStallStatus::Normal
+    ));
 }
 
 #[tokio::test]
@@ -726,7 +921,12 @@ async fn test_full_lifecycle() {
                 .scan(rec.as_bytes(), None, None, RangeReadOptions::default())
                 .await
                 .unwrap();
-            assert_eq!(scan.entries.len(), 20, "record {} should have 20 items", rec);
+            assert_eq!(
+                scan.entries.len(),
+                20,
+                "record {} should have 20 items",
+                rec
+            );
         }
     }
 }
@@ -869,7 +1069,10 @@ async fn test_scan_spans_memtable_and_sstable() {
     engine.close().await.unwrap();
     let (config2, backend2) = test_config(&dir, "test-ns");
     let mut engine = Engine::open(backend2, config2).await.unwrap();
-    assert!(engine.l0_count() > 0, "expected data in SSTables after close");
+    assert!(
+        engine.l0_count() > 0,
+        "expected data in SSTables after close"
+    );
 
     // Write k05–k09 into the active memtable
     for i in 5..10u32 {
@@ -963,7 +1166,10 @@ async fn test_run_maintenance_freezes_aged_memtable() {
     engine.run_maintenance().await.unwrap();
 
     assert_eq!(engine.frozen_memtable_count(), 0);
-    assert!(engine.l0_count() > 0, "aged memtable should have been flushed to L0");
+    assert!(
+        engine.l0_count() > 0,
+        "aged memtable should have been flushed to L0"
+    );
 }
 
 #[tokio::test]
@@ -1018,7 +1224,13 @@ async fn test_run_maintenance_flushes_pending_frozen() {
         let key = format!("key{:04}", i);
         let value = format!("value_{}", i);
         engine
-            .put(b"rec1", key.as_bytes(), Bytes::from(value), Bytes::new(), None)
+            .put(
+                b"rec1",
+                key.as_bytes(),
+                Bytes::from(value),
+                Bytes::new(),
+                None,
+            )
             .await
             .unwrap();
     }
@@ -1027,7 +1239,89 @@ async fn test_run_maintenance_flushes_pending_frozen() {
     engine.run_maintenance().await.unwrap();
 
     assert_eq!(engine.frozen_memtable_count(), 0);
-    assert!(engine.l0_count() > 0, "frozen memtables should have been flushed");
+    assert!(
+        engine.l0_count() > 0,
+        "frozen memtables should have been flushed"
+    );
+}
+
+#[tokio::test]
+async fn test_run_maintenance_age_flush_cleans_old_wal_segments() {
+    let dir = TempDir::new().unwrap();
+    let storage_dir = dir.path().join("storage");
+    std::fs::create_dir_all(&storage_dir).unwrap();
+
+    let backend = LocalFsBackend::new(storage_dir);
+    let config = EngineConfig {
+        memtable_config: MemtableConfig {
+            size_threshold: 1_000_000,
+            max_frozen_count: 3,
+            ..Default::default()
+        },
+        wal_config: WalConfig {
+            segment_size_target: 256,
+            group_commit_max_bytes: 1,
+            ..WalConfig::default()
+        },
+        flush_config: FlushConfig {
+            sst_config: flushdb_engine::sstable::types::SstConfig::default(),
+            max_frozen_count: 3,
+            flush_trigger_size: 1_000_000,
+            flush_trigger_age: std::time::Duration::from_millis(500),
+        },
+        compaction_config: CompactionConfig::default(),
+        manifest_config: ManifestConfig {
+            base_path: "flushdb".to_string(),
+            ..ManifestConfig::default()
+        },
+        cache_config: CacheConfig::default(),
+        namespace: "maint-wal-cleanup".to_string(),
+        local_dir: dir.path().to_path_buf(),
+    };
+
+    let mut engine = Engine::open(backend, config).await.unwrap();
+
+    for i in 0..40u32 {
+        let key = format!("key{i:04}");
+        let value = vec![b'x'; 1024];
+        engine
+            .put(
+                b"rec1",
+                key.as_bytes(),
+                Bytes::from(value),
+                Bytes::new(),
+                None,
+            )
+            .await
+            .unwrap();
+    }
+
+    let mut wal_files_before = 0;
+    for _ in 0..20 {
+        wal_files_before = wal_file_count(&dir);
+        if wal_files_before > 1 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert!(
+        wal_files_before > 1,
+        "test requires multiple WAL segments before maintenance flush, found {:?}",
+        wal_files(&dir)
+    );
+
+    tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+    engine.run_maintenance().await.unwrap();
+
+    let wal_files_after = wal_file_count(&dir);
+    assert_eq!(
+        wal_files_after, 1,
+        "age-based maintenance flush should clean old WAL segments"
+    );
+    assert!(
+        engine.l0_count() > 0,
+        "maintenance flush should produce an L0 SSTable"
+    );
 }
 
 #[tokio::test]
@@ -1067,7 +1361,13 @@ async fn test_write_stall_rejects_on_memory_pressure() {
         let key = format!("key{:04}", i);
         let value = vec![0u8; 64];
         match engine
-            .put(b"rec1", key.as_bytes(), Bytes::from(value), Bytes::new(), None)
+            .put(
+                b"rec1",
+                key.as_bytes(),
+                Bytes::from(value),
+                Bytes::new(),
+                None,
+            )
             .await
         {
             Ok(_) => {}
@@ -1083,7 +1383,10 @@ async fn test_write_stall_rejects_on_memory_pressure() {
         flushdb_types::FlushError::ResourceExhausted { resource, .. } => {
             assert_eq!(resource, "memtable_memory");
         }
-        other => panic!("expected ResourceExhausted for memtable_memory, got: {:?}", other),
+        other => panic!(
+            "expected ResourceExhausted for memtable_memory, got: {:?}",
+            other
+        ),
     }
 }
 
@@ -1098,12 +1401,24 @@ async fn test_dedup_does_not_write_duplicate_to_wal() {
     {
         let mut engine = Engine::open(backend.clone(), config.clone()).await.unwrap();
         engine
-            .put(b"rec1", b"key1", Bytes::from("v1"), Bytes::new(), Some(token))
+            .put(
+                b"rec1",
+                b"key1",
+                Bytes::from("v1"),
+                Bytes::new(),
+                Some(token),
+            )
             .await
             .unwrap();
 
         let result = engine
-            .put(b"rec1", b"key1", Bytes::from("v2"), Bytes::new(), Some(token))
+            .put(
+                b"rec1",
+                b"key1",
+                Bytes::from("v2"),
+                Bytes::new(),
+                Some(token),
+            )
             .await;
         assert!(result.is_err());
     }
@@ -1124,13 +1439,25 @@ async fn test_dedup_does_not_consume_sequence_on_duplicate() {
     let token = IdempotencyToken::new(1);
 
     let seq1 = engine
-        .put(b"rec1", b"key1", Bytes::from("v1"), Bytes::new(), Some(token))
+        .put(
+            b"rec1",
+            b"key1",
+            Bytes::from("v1"),
+            Bytes::new(),
+            Some(token),
+        )
         .await
         .unwrap();
 
     // Duplicate should fail
     let _ = engine
-        .put(b"rec1", b"key1", Bytes::from("v2"), Bytes::new(), Some(token))
+        .put(
+            b"rec1",
+            b"key1",
+            Bytes::from("v2"),
+            Bytes::new(),
+            Some(token),
+        )
         .await;
 
     // Next successful write should get seq1 + 1 (no gap)
@@ -1139,5 +1466,9 @@ async fn test_dedup_does_not_consume_sequence_on_duplicate() {
         .await
         .unwrap();
 
-    assert_eq!(seq2, seq1 + 1, "duplicate should not consume a sequence number");
+    assert_eq!(
+        seq2,
+        seq1 + 1,
+        "duplicate should not consume a sequence number"
+    );
 }

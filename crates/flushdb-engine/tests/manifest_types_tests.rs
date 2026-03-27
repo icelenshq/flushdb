@@ -2,8 +2,8 @@ use flushdb_engine::manifest::types::{
     l0_sst_path, manifest_path, run_fragment_path, Level, Manifest, ManifestConfig, ManifestId,
     ManifestUpdate, ManifestUpdateTrigger, SSTableMeta,
 };
-use flushdb_engine::sstable::SstInfo;
 use flushdb_engine::sstable::types::CompressionType;
+use flushdb_engine::sstable::SstInfo;
 use flushdb_types::CompositeKey;
 
 // ---------------------------------------------------------------------------
@@ -689,7 +689,10 @@ fn test_manifest_serde_roundtrip_empty() {
     assert_eq!(recovered.manifest_id, original.manifest_id);
     assert_eq!(recovered.namespace, original.namespace);
     assert_eq!(recovered.writer_epoch, original.writer_epoch);
-    assert_eq!(recovered.last_flushed_sequence, original.last_flushed_sequence);
+    assert_eq!(
+        recovered.last_flushed_sequence,
+        original.last_flushed_sequence
+    );
     assert_eq!(recovered.levels.len(), original.levels.len());
     assert_eq!(recovered.is_snapshot, original.is_snapshot);
 }
@@ -1047,8 +1050,7 @@ fn test_manifest_serialize_produces_valid_json() {
     let bytes = m.serialize().expect("serialize");
 
     // Verify it's valid JSON
-    let _value: serde_json::Value =
-        serde_json::from_slice(&bytes).expect("should be valid JSON");
+    let _value: serde_json::Value = serde_json::from_slice(&bytes).expect("should be valid JSON");
 }
 
 #[test]
@@ -1114,10 +1116,7 @@ fn test_manifest_update_add_multiple_sstables() {
     let meta1 = make_sstable_meta("sst-1", &k1, &k2);
     let meta2 = make_sstable_meta("sst-2", &k3, &k4);
 
-    let update = make_flush_update(
-        vec![(Level::L0, meta1), (Level::L0, meta2)],
-        Some(200),
-    );
+    let update = make_flush_update(vec![(Level::L0, meta1), (Level::L0, meta2)], Some(200));
     let new_m = update.apply(&m).expect("apply");
 
     assert_eq!(new_m.l0_count(), 2);
@@ -1359,8 +1358,7 @@ fn test_manifest_update_trigger_serde_roundtrip() {
 
     for trigger in &triggers {
         let json = serde_json::to_string(trigger).expect("serialize");
-        let deserialized: ManifestUpdateTrigger =
-            serde_json::from_str(&json).expect("deserialize");
+        let deserialized: ManifestUpdateTrigger = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(&deserialized, trigger);
     }
 }
@@ -1417,10 +1415,7 @@ fn test_l0_sst_path_custom_base() {
 #[test]
 fn test_run_fragment_path_format() {
     let path = run_fragment_path("flushdb", "my-ns", Level::L1, "run-abc", 0);
-    assert_eq!(
-        path,
-        "flushdb/my-ns/sstables/L1/run-run-abc/frag-0000.sst"
-    );
+    assert_eq!(path, "flushdb/my-ns/sstables/L1/run-run-abc/frag-0000.sst");
 }
 
 #[test]

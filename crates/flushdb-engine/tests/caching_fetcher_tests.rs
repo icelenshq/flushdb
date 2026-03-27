@@ -1,14 +1,12 @@
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::Bytes;
 use flushdb_types::{CompositeKey, EntryType, EntryValue, FlushResult};
 
 use flushdb_engine::block_fetcher::BlockFetcher;
-use flushdb_engine::cache::{
-    BlockCache, CacheConfig, CachingBlockFetcher, sst_id_from_path,
-};
+use flushdb_engine::cache::{sst_id_from_path, BlockCache, CacheConfig, CachingBlockFetcher};
 use flushdb_engine::sstable::{BlockEntry, CompressionType};
 
 fn make_entry(record_id: &str, item_key: &str, value: &[u8]) -> BlockEntry {

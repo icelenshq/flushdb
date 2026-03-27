@@ -147,13 +147,7 @@ impl RangeTombstoneCollector {
         }
     }
 
-    pub fn add(
-        &mut self,
-        record_id: &[u8],
-        start_key: &[u8],
-        end_key: &[u8],
-        sequence: u64,
-    ) {
+    pub fn add(&mut self, record_id: &[u8], start_key: &[u8], end_key: &[u8], sequence: u64) {
         use crate::range_tombstone::RangeTombstone;
         self.index.add(RangeTombstone {
             record_id: Bytes::copy_from_slice(record_id),
@@ -198,7 +192,11 @@ impl<'a> ReadPath<'a> {
                 return Ok(None);
             }
             // Check range tombstones from memtable
-            if memtable_list.range_tombstone_covers(key.record_id(), key.item_key(), entry.sequence_number) {
+            if memtable_list.range_tombstone_covers(
+                key.record_id(),
+                key.item_key(),
+                entry.sequence_number,
+            ) {
                 return Ok(None);
             }
             return Ok(Some(merge_entry));
@@ -341,9 +339,8 @@ impl<'a> ReadPath<'a> {
                 continue;
             }
 
-            let entry_bytes = entry.composite_key.as_bytes().len()
-                + entry.value.len()
-                + entry.metadata.len();
+            let entry_bytes =
+                entry.composite_key.as_bytes().len() + entry.value.len() + entry.metadata.len();
             total_bytes += entry_bytes;
             entries.push(entry);
 

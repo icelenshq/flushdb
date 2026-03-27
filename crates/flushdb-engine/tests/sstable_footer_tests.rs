@@ -5,12 +5,8 @@ use flushdb_engine::sstable::types::{
 use flushdb_types::{CompositeKey, FlushError};
 
 fn make_footer(compression: CompressionType) -> SstFooter {
-    let min_key = SstFooter::truncate_key(
-        &CompositeKey::new(b"aaa", b"000").unwrap(),
-    );
-    let max_key = SstFooter::truncate_key(
-        &CompositeKey::new(b"zzz", b"999").unwrap(),
-    );
+    let min_key = SstFooter::truncate_key(&CompositeKey::new(b"aaa", b"000").unwrap());
+    let max_key = SstFooter::truncate_key(&CompositeKey::new(b"zzz", b"999").unwrap());
 
     SstFooter {
         bloom_filter_offset: 8192,
@@ -38,7 +34,11 @@ fn test_footer_round_trip() {
 
 #[test]
 fn test_footer_round_trip_all_compression_types() {
-    for compression in [CompressionType::None, CompressionType::Snappy, CompressionType::Zstd] {
+    for compression in [
+        CompressionType::None,
+        CompressionType::Snappy,
+        CompressionType::Zstd,
+    ] {
         let footer = make_footer(compression);
         let encoded = footer.encode();
         let decoded = SstFooter::decode(&encoded).unwrap();

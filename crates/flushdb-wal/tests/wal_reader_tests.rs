@@ -274,9 +274,7 @@ fn test_iter_from_across_segments() {
         "iter_from should yield entries from midpoint onward"
     );
     assert!(
-        iter_entries
-            .iter()
-            .all(|e| e.sequence_number >= mid_seq),
+        iter_entries.iter().all(|e| e.sequence_number >= mid_seq),
         "all entries should have sequence >= mid_seq"
     );
     assert_eq!(iter_entries[0].sequence_number, mid_seq);

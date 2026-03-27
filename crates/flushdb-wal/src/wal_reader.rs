@@ -78,7 +78,11 @@ impl WalReader {
     }
 
     pub fn iter(&self) -> WalEntryIterator {
-        WalEntryIterator::new(self.partition_dir.clone(), self.segment_numbers.clone(), None)
+        WalEntryIterator::new(
+            self.partition_dir.clone(),
+            self.segment_numbers.clone(),
+            None,
+        )
     }
 
     pub fn iter_from(&self, min_sequence: u64) -> WalEntryIterator {
@@ -108,11 +112,7 @@ pub struct WalEntryIterator {
 }
 
 impl WalEntryIterator {
-    fn new(
-        partition_dir: PathBuf,
-        segment_numbers: Vec<u64>,
-        min_sequence: Option<u64>,
-    ) -> Self {
+    fn new(partition_dir: PathBuf, segment_numbers: Vec<u64>, min_sequence: Option<u64>) -> Self {
         Self {
             partition_dir,
             segment_numbers,

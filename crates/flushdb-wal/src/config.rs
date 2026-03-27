@@ -30,13 +30,13 @@ pub struct WalConfig {
 impl Default for WalConfig {
     fn default() -> Self {
         Self {
-            segment_size_target: 33_554_432,      // 32 MB
-            max_wal_size: 268_435_456,             // 256 MB
-            max_total_wal_bytes: 536_870_912,      // 512 MB
+            segment_size_target: 33_554_432,  // 32 MB
+            max_wal_size: 268_435_456,        // 256 MB
+            max_total_wal_bytes: 536_870_912, // 512 MB
             segment_max_age: Duration::from_secs(300),
             fsync_mode: FsyncMode::default(),
             group_commit_interval: Duration::from_micros(200),
-            group_commit_max_bytes: 262_144,       // 256 KB
+            group_commit_max_bytes: 262_144, // 256 KB
             batch_sync_interval: Duration::from_millis(10),
         }
     }

@@ -133,7 +133,11 @@ fn test_serialize_empty_block() {
     let block = builder.build();
     let serialized = block.serialize();
 
-    assert_eq!(serialized.len(), 4, "empty dedup block must be 4 bytes (count=0)");
+    assert_eq!(
+        serialized.len(),
+        4,
+        "empty dedup block must be 4 bytes (count=0)"
+    );
     assert_eq!(&serialized[..], &[0, 0, 0, 0]);
 
     let restored = DedupBlock::deserialize(&serialized).expect("deserialize must succeed");

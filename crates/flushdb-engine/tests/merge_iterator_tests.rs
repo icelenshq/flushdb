@@ -260,14 +260,8 @@ fn test_dedup_range_delete_kept_as_winner() {
 
 #[test]
 fn test_merge_preserves_composite_key_order() {
-    let source0 = vec![
-        make_put("alpha", "z", 1),
-        make_put("gamma", "a", 3),
-    ];
-    let source1 = vec![
-        make_put("beta", "m", 2),
-        make_put("delta", "x", 4),
-    ];
+    let source0 = vec![make_put("alpha", "z", 1), make_put("gamma", "a", 3)];
+    let source1 = vec![make_put("beta", "m", 2), make_put("delta", "x", 4)];
 
     let mut iter = MergeIterator::new(vec![make_source(source0, 0), make_source(source1, 1)]);
 
@@ -295,14 +289,8 @@ fn test_merge_preserves_composite_key_order() {
 #[test]
 fn test_merge_same_record_different_items() {
     // Items within the same record should be sorted by item_key
-    let source0 = vec![
-        make_put("rec", "apple", 1),
-        make_put("rec", "cherry", 3),
-    ];
-    let source1 = vec![
-        make_put("rec", "banana", 2),
-        make_put("rec", "date", 4),
-    ];
+    let source0 = vec![make_put("rec", "apple", 1), make_put("rec", "cherry", 3)];
+    let source1 = vec![make_put("rec", "banana", 2), make_put("rec", "date", 4)];
 
     let mut iter = MergeIterator::new(vec![make_source(source0, 0), make_source(source1, 1)]);
 
@@ -317,14 +305,8 @@ fn test_merge_same_record_different_items() {
 #[test]
 fn test_merge_cross_record_ordering() {
     // All items for "aaa" must come before any item for "aab"
-    let source0 = vec![
-        make_put("aaa", "z", 1),
-        make_put("aab", "a", 3),
-    ];
-    let source1 = vec![
-        make_put("aaa", "m", 2),
-        make_put("aab", "b", 4),
-    ];
+    let source0 = vec![make_put("aaa", "z", 1), make_put("aab", "a", 3)];
+    let source1 = vec![make_put("aaa", "m", 2), make_put("aab", "b", 4)];
 
     let mut iter = MergeIterator::new(vec![make_source(source0, 0), make_source(source1, 1)]);
 
@@ -344,18 +326,9 @@ fn test_merge_cross_record_ordering() {
 fn test_merge_five_sources() {
     // Simulates: active memtable (0), frozen memtable (1), 3 L0 SSTables (2,3,4)
     // Each source has unique keys and some overlapping keys
-    let source0 = vec![
-        make_put("user", "email", 50),
-        make_put("user", "name", 48),
-    ];
-    let source1 = vec![
-        make_put("user", "age", 40),
-        make_put("user", "name", 38),
-    ];
-    let source2 = vec![
-        make_put("order", "item1", 30),
-        make_put("user", "name", 28),
-    ];
+    let source0 = vec![make_put("user", "email", 50), make_put("user", "name", 48)];
+    let source1 = vec![make_put("user", "age", 40), make_put("user", "name", 38)];
+    let source2 = vec![make_put("order", "item1", 30), make_put("user", "name", 28)];
     let source3 = vec![
         make_put("order", "item2", 20),
         make_put("user", "phone", 18),
@@ -485,7 +458,7 @@ fn test_merge_all_same_key_raw() {
 
     // All returned, lowest source_id first
     assert_eq!(results[0].sequence_number, 100); // source 0
-    assert_eq!(results[9].sequence_number, 10);  // source 9
+    assert_eq!(results[9].sequence_number, 10); // source 9
 }
 
 // =============================================================================
@@ -654,14 +627,8 @@ fn test_dedup_interleaved_puts_and_deletes() {
 #[test]
 fn test_dedup_preserves_non_overlapping_keys() {
     // Dedup should not affect keys that only appear in one source
-    let source0 = vec![
-        make_put("a", "k1", 10),
-        make_put("c", "k1", 30),
-    ];
-    let source1 = vec![
-        make_put("b", "k1", 20),
-        make_put("d", "k1", 40),
-    ];
+    let source0 = vec![make_put("a", "k1", 10), make_put("c", "k1", 30)];
+    let source1 = vec![make_put("b", "k1", 20), make_put("d", "k1", 40)];
 
     let mut iter = MergeIterator::new(vec![make_source(source0, 0), make_source(source1, 1)]);
 
@@ -710,7 +677,7 @@ fn test_next_entry_ordering_for_same_key() {
     // Ordered by sequence number descending (newest first)
     assert_eq!(results[0].sequence_number, 200); // highest seq
     assert_eq!(results[1].sequence_number, 100);
-    assert_eq!(results[2].sequence_number, 50);  // lowest seq
+    assert_eq!(results[2].sequence_number, 50); // lowest seq
 }
 
 // =============================================================================
@@ -926,7 +893,10 @@ fn test_merge_entry_from_skip_node() {
     let node = skiplist.iter().next().expect("should have one node");
     let merge_entry = MergeEntry::from_skip_node(node);
 
-    assert_eq!(merge_entry.composite_key, CompositeKey::new(b"rec1", b"key1").unwrap());
+    assert_eq!(
+        merge_entry.composite_key,
+        CompositeKey::new(b"rec1", b"key1").unwrap()
+    );
     assert_eq!(merge_entry.value, Bytes::from("value1"));
     assert_eq!(merge_entry.metadata, Bytes::from("meta1"));
     assert_eq!(merge_entry.entry_type, EntryType::Put);

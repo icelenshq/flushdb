@@ -87,11 +87,7 @@ pub async fn ensure_minio() -> u16 {
             register_exit_cleanup();
 
             let client = create_s3_client(port).await;
-            let _ = client
-                .create_bucket()
-                .bucket(TEST_BUCKET)
-                .send()
-                .await;
+            let _ = client.create_bucket().bucket(TEST_BUCKET).send().await;
 
             container
         })

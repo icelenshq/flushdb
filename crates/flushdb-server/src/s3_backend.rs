@@ -208,7 +208,10 @@ impl S3StorageBackend {
                 request = request.continuation_token(token);
             }
 
-            let resp = request.send().await.map_err(|err| map_sdk_error_generic(&err))?;
+            let resp = request
+                .send()
+                .await
+                .map_err(|err| map_sdk_error_generic(&err))?;
 
             for object in resp.contents() {
                 if let Some(key) = object.key() {

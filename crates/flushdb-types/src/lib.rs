@@ -18,7 +18,7 @@ pub use entry_value::EntryValue;
 pub use error::{FlushError, FlushResult};
 pub use idempotency_token::IdempotencyToken;
 pub use item::Item;
+pub use local_fs_backend::LocalFsBackend;
 pub use memtable_entry::MemtableEntry;
 pub use ordered_key::OrderedKey;
-pub use local_fs_backend::LocalFsBackend;
 pub use storage_backend::StorageBackend;

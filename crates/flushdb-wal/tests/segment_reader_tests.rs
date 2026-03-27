@@ -98,8 +98,12 @@ fn test_tail_truncation_extra_bytes() {
     let path = write_entries(dir.path(), &entries);
 
     // Append random bytes at the end
-    let mut file = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
-    file.write_all(&[0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06]).unwrap();
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .unwrap();
+    file.write_all(&[0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06])
+        .unwrap();
     drop(file);
 
     let mut reader = SegmentReader::open(&path).unwrap();
@@ -117,7 +121,10 @@ fn test_tail_truncation_partial_length_prefix() {
     let path = write_entries(dir.path(), &entries);
 
     // Append only 2 bytes (incomplete length prefix)
-    let mut file = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .unwrap();
     file.write_all(&[0x01, 0x02]).unwrap();
     drop(file);
 
@@ -136,7 +143,10 @@ fn test_tail_truncation_partial_body() {
     let path = write_entries(dir.path(), &entries);
 
     // Append a valid entry_length but incomplete body
-    let mut file = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .unwrap();
     let fake_length: u32 = 100;
     file.write_all(&fake_length.to_le_bytes()).unwrap();
     file.write_all(&[0u8; 10]).unwrap(); // only 10 of 100 body bytes
@@ -160,7 +170,12 @@ fn test_mid_segment_corruption_returns_error() {
     // Find approximate location of entry 3
     let mut offset = SEGMENT_HEADER_SIZE;
     for _ in 0..2 {
-        let len = u32::from_le_bytes([data[offset], data[offset+1], data[offset+2], data[offset+3]]) as usize;
+        let len = u32::from_le_bytes([
+            data[offset],
+            data[offset + 1],
+            data[offset + 2],
+            data[offset + 3],
+        ]) as usize;
         offset += 4 + len + 4;
     }
     // Now at entry 3, corrupt a body byte
@@ -185,7 +200,12 @@ fn test_zero_entry_length_stops_iteration() {
     // Read file, insert 4 zero bytes after entry 1
     let data = std::fs::read(&path).unwrap();
     let mut offset = SEGMENT_HEADER_SIZE;
-    let len = u32::from_le_bytes([data[offset], data[offset+1], data[offset+2], data[offset+3]]) as usize;
+    let len = u32::from_le_bytes([
+        data[offset],
+        data[offset + 1],
+        data[offset + 2],
+        data[offset + 3],
+    ]) as usize;
     offset += 4 + len + 4; // past entry 1
 
     let mut new_data = Vec::new();

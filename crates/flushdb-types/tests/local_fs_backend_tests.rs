@@ -136,7 +136,10 @@ async fn test_get_range_first_bytes() {
         .await
         .expect("put failed");
 
-    let result = backend.get_range("file", 0, 5).await.expect("get_range failed");
+    let result = backend
+        .get_range("file", 0, 5)
+        .await
+        .expect("get_range failed");
     assert_eq!(result, Bytes::from("01234"));
 }
 
@@ -151,7 +154,10 @@ async fn test_get_range_last_bytes() {
         .expect("put failed");
 
     // Read the last 4 bytes (footer simulation).
-    let result = backend.get_range("file", 6, 4).await.expect("get_range failed");
+    let result = backend
+        .get_range("file", 6, 4)
+        .await
+        .expect("get_range failed");
     assert_eq!(result, Bytes::from("6789"));
 }
 
@@ -165,7 +171,10 @@ async fn test_get_range_middle() {
         .await
         .expect("put failed");
 
-    let result = backend.get_range("file", 3, 4).await.expect("get_range failed");
+    let result = backend
+        .get_range("file", 3, 4)
+        .await
+        .expect("get_range failed");
     assert_eq!(result, Bytes::from("3456"));
 }
 
@@ -175,10 +184,7 @@ async fn test_get_range_full() {
     let backend = LocalFsBackend::new(dir.path());
 
     let data = Bytes::from("hello world");
-    backend
-        .put("file", data.clone())
-        .await
-        .expect("put failed");
+    backend.put("file", data.clone()).await.expect("put failed");
 
     let result = backend
         .get_range("file", 0, data.len() as u64)
@@ -448,9 +454,18 @@ async fn test_list_prefix_all() {
     let dir = tempdir().expect("failed to create tempdir");
     let backend = LocalFsBackend::new(dir.path());
 
-    backend.put("a", Bytes::from("1")).await.expect("put failed");
-    backend.put("b", Bytes::from("2")).await.expect("put failed");
-    backend.put("c", Bytes::from("3")).await.expect("put failed");
+    backend
+        .put("a", Bytes::from("1"))
+        .await
+        .expect("put failed");
+    backend
+        .put("b", Bytes::from("2"))
+        .await
+        .expect("put failed");
+    backend
+        .put("c", Bytes::from("3"))
+        .await
+        .expect("put failed");
 
     let keys = backend.list_prefix("").await.expect("list_prefix failed");
     assert_eq!(keys, vec!["a", "b", "c"]);
@@ -509,13 +524,16 @@ async fn test_list_prefix_no_match() {
     let dir = tempdir().expect("failed to create tempdir");
     let backend = LocalFsBackend::new(dir.path());
 
-    backend.put("a", Bytes::from("1")).await.expect("put failed");
-    backend.put("b", Bytes::from("2")).await.expect("put failed");
-
-    let keys = backend
-        .list_prefix("z")
+    backend
+        .put("a", Bytes::from("1"))
         .await
-        .expect("list_prefix failed");
+        .expect("put failed");
+    backend
+        .put("b", Bytes::from("2"))
+        .await
+        .expect("put failed");
+
+    let keys = backend.list_prefix("z").await.expect("list_prefix failed");
     assert!(keys.is_empty());
 }
 
@@ -575,9 +593,18 @@ async fn test_list_prefix_after_delete() {
     let dir = tempdir().expect("failed to create tempdir");
     let backend = LocalFsBackend::new(dir.path());
 
-    backend.put("a", Bytes::from("1")).await.expect("put failed");
-    backend.put("b", Bytes::from("2")).await.expect("put failed");
-    backend.put("c", Bytes::from("3")).await.expect("put failed");
+    backend
+        .put("a", Bytes::from("1"))
+        .await
+        .expect("put failed");
+    backend
+        .put("b", Bytes::from("2"))
+        .await
+        .expect("put failed");
+    backend
+        .put("c", Bytes::from("3"))
+        .await
+        .expect("put failed");
 
     backend.delete("b").await.expect("delete failed");
 
@@ -736,7 +763,10 @@ async fn test_deeply_nested_path() {
     let result = backend.get(key).await.expect("get failed");
     assert_eq!(result, data);
 
-    let keys = backend.list_prefix("a/b/c/").await.expect("list_prefix failed");
+    let keys = backend
+        .list_prefix("a/b/c/")
+        .await
+        .expect("list_prefix failed");
     assert_eq!(keys, vec![key]);
 }
 
@@ -873,10 +903,7 @@ async fn test_list_prefix_excludes_tmp_files() {
         .await
         .expect("failed to write tmp file");
 
-    let keys = backend
-        .list_prefix("")
-        .await
-        .expect("list_prefix failed");
+    let keys = backend.list_prefix("").await.expect("list_prefix failed");
     assert_eq!(
         keys,
         vec!["real_key"],
@@ -896,10 +923,7 @@ async fn test_put_leaves_no_tmp_residue() {
             .expect("put failed");
     }
 
-    let keys = backend
-        .list_prefix("")
-        .await
-        .expect("list_prefix failed");
+    let keys = backend.list_prefix("").await.expect("list_prefix failed");
     assert_eq!(keys.len(), 10);
     for key in &keys {
         assert!(

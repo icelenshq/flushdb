@@ -131,6 +131,23 @@ async fn test_append_multiple_writes() {
 }
 
 #[tokio::test]
+async fn test_append_batch_persists_all_entries() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = WalConfig::default();
+    let mut manager = WalManager::open(dir.path(), config).unwrap();
+
+    let notif = manager
+        .append_batch(vec![make_entry(), make_entry(), make_entry()], 1)
+        .await
+        .unwrap();
+    notif.await.unwrap().unwrap();
+    manager.shutdown().await.unwrap();
+
+    let entries = WalManager::recover(dir.path()).unwrap();
+    assert_eq!(entries.len(), 3);
+}
+
+#[tokio::test]
 async fn test_append_preserves_entry_data() {
     let dir = tempfile::tempdir().unwrap();
     let config = WalConfig::default();
@@ -339,7 +356,10 @@ async fn test_cleanup_deletes_clean_segments() {
         })
         .count();
 
-    assert!(count_after < count_before, "segments should have been deleted");
+    assert!(
+        count_after < count_before,
+        "segments should have been deleted"
+    );
     manager.shutdown().await.unwrap();
 }
 
@@ -379,7 +399,10 @@ async fn test_cleanup_skips_dirty_segments() {
         })
         .count();
 
-    assert_eq!(count_before, count_after, "dirty segments should not be deleted");
+    assert_eq!(
+        count_before, count_after,
+        "dirty segments should not be deleted"
+    );
     manager.shutdown().await.unwrap();
 }
 
@@ -449,20 +472,13 @@ async fn test_wal_size_reflects_total_segment_size() {
     }
 
     let size_after = manager.wal_size().unwrap();
-    assert!(
-        size_after > size_empty,
-        "WAL size should grow after writes"
-    );
+    assert!(size_after > size_empty, "WAL size should grow after writes");
 
     // Verify it matches actual disk usage
     let mut disk_total = 0u64;
     for entry in std::fs::read_dir(dir.path()).unwrap() {
         let entry = entry.unwrap();
-        if entry
-            .file_name()
-            .to_string_lossy()
-            .ends_with(".wal")
-        {
+        if entry.file_name().to_string_lossy().ends_with(".wal") {
             disk_total += entry.metadata().unwrap().len();
         }
     }

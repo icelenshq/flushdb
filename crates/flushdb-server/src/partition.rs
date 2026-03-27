@@ -3,8 +3,8 @@ use std::time::Instant;
 
 use bytes::Bytes;
 use flushdb_engine::{
-    CacheStats, CompactionResult, Engine, FlushResult_, GetResult, ManifestId, RangeReadOptions,
-    RangeReadResult, WriteStallStatus,
+    CacheStats, CompactionResult, Engine, FlushResult_, GetResult, ManifestId, PutBatchItem,
+    RangeReadOptions, RangeReadResult, WriteStallStatus,
 };
 use flushdb_types::{FlushError, FlushResult, IdempotencyToken, StorageBackend};
 
@@ -109,8 +109,23 @@ impl<B: StorageBackend + Clone + 'static> Partition<B> {
     ) -> FlushResult<u64> {
         self.check_writable()?;
         self.engine
-            .put(record_id, item_key, value, metadata, Some(idempotency_token))
+            .put(
+                record_id,
+                item_key,
+                value,
+                metadata,
+                Some(idempotency_token),
+            )
             .await
+    }
+
+    pub async fn put_batch(
+        &mut self,
+        record_id: &[u8],
+        items: Vec<PutBatchItem>,
+    ) -> FlushResult<usize> {
+        self.check_writable()?;
+        self.engine.put_batch(record_id, items).await
     }
 
     pub async fn delete(&mut self, record_id: &[u8], item_key: &[u8]) -> FlushResult<u64> {
@@ -125,16 +140,14 @@ impl<B: StorageBackend + Clone + 'static> Partition<B> {
         end_key: &[u8],
     ) -> FlushResult<u64> {
         self.check_writable()?;
-        self.engine.delete_range(record_id, start_key, end_key).await
+        self.engine
+            .delete_range(record_id, start_key, end_key)
+            .await
     }
 
     // --- Read Methods ---
 
-    pub async fn get(
-        &self,
-        record_id: &[u8],
-        item_key: &[u8],
-    ) -> FlushResult<Option<GetResult>> {
+    pub async fn get(&self, record_id: &[u8], item_key: &[u8]) -> FlushResult<Option<GetResult>> {
         self.check_readable()?;
         self.engine.get(record_id, item_key).await
     }
@@ -147,7 +160,9 @@ impl<B: StorageBackend + Clone + 'static> Partition<B> {
         options: RangeReadOptions,
     ) -> FlushResult<RangeReadResult> {
         self.check_readable()?;
-        self.engine.scan(record_id, start_key, end_key, options).await
+        self.engine
+            .scan(record_id, start_key, end_key, options)
+            .await
     }
 
     pub async fn multi_get(

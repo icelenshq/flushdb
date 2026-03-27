@@ -35,6 +35,9 @@ fn test_default_values() {
     assert_eq!(ns.write_consistency, WriteConsistency::Quorum);
     assert_eq!(ns.replication_factor, 3);
     assert_eq!(ns.compaction_strategy, "LEVELED");
+    assert_eq!(ns.wal_fsync_mode, "sync");
+    assert_eq!(ns.wal_group_commit_interval_us, 200);
+    assert_eq!(ns.wal_batch_sync_interval_ms, 10);
 }
 
 #[test]
@@ -97,7 +100,10 @@ fn test_rejects_zero_partition_count() {
 fn test_rejects_non_power_of_two() {
     for count in [3, 5, 6, 7, 9, 10, 12, 15, 17, 100] {
         let result = NamespaceConfig::new("test-ns".to_string(), count);
-        assert!(result.is_err(), "partition_count={count} should be rejected");
+        assert!(
+            result.is_err(),
+            "partition_count={count} should be rejected"
+        );
         match result.unwrap_err() {
             FlushError::InvalidArgument { message } => {
                 assert_eq!(message, "partition_count: must be a power of 2");
@@ -171,6 +177,34 @@ fn test_rejects_slo_inversion() {
 }
 
 #[test]
+fn test_rejects_invalid_wal_fsync_mode() {
+    let mut ns = NamespaceConfig::new("test-ns".to_string(), 4).expect("should succeed");
+    ns.wal_fsync_mode = "invalid".to_string();
+    assert!(matches!(
+        ns.validate(),
+        Err(FlushError::InvalidArgument { message }) if message == "wal_fsync_mode: must be 'sync' or 'batch_sync', got 'invalid'"
+    ));
+}
+
+#[test]
+fn test_rejects_zero_wal_batch_sync_interval() {
+    let mut ns = NamespaceConfig::new("test-ns".to_string(), 4).expect("should succeed");
+    ns.wal_batch_sync_interval_ms = 0;
+    assert!(matches!(
+        ns.validate(),
+        Err(FlushError::InvalidArgument { message }) if message == "wal_batch_sync_interval_ms: must be > 0"
+    ));
+}
+
+#[test]
+fn test_accepts_zero_wal_group_commit_interval() {
+    let mut ns = NamespaceConfig::new("test-ns".to_string(), 4).expect("should succeed");
+    ns.wal_group_commit_interval_us = 0;
+    ns.validate()
+        .expect("zero group commit interval should stay valid");
+}
+
+#[test]
 fn test_rejects_composite_empty_fields() {
     let strategy = PartitionKeyStrategy::Composite {
         delimiter: ":".to_string(),
@@ -214,17 +248,35 @@ fn test_serde_round_trip() {
     let deserialized: NamespaceConfig = serde_json::from_str(&json).expect("deserialize");
 
     assert_eq!(ns.name, deserialized.name);
-    assert_eq!(ns.partition_key_strategy, deserialized.partition_key_strategy);
+    assert_eq!(
+        ns.partition_key_strategy,
+        deserialized.partition_key_strategy
+    );
     assert_eq!(ns.partition_count, deserialized.partition_count);
     assert_eq!(ns.s3_path_prefix, deserialized.s3_path_prefix);
-    assert_eq!(ns.memtable_size_threshold, deserialized.memtable_size_threshold);
+    assert_eq!(
+        ns.memtable_size_threshold,
+        deserialized.memtable_size_threshold
+    );
     assert!((ns.bloom_filter_fp_rate - deserialized.bloom_filter_fp_rate).abs() < f64::EPSILON);
-    assert_eq!(ns.default_page_size_bytes, deserialized.default_page_size_bytes);
+    assert_eq!(
+        ns.default_page_size_bytes,
+        deserialized.default_page_size_bytes
+    );
     assert_eq!(ns.max_page_size_bytes, deserialized.max_page_size_bytes);
     assert_eq!(ns.target_latency_slo_ms, deserialized.target_latency_slo_ms);
     assert_eq!(ns.max_latency_slo_ms, deserialized.max_latency_slo_ms);
     assert_eq!(ns.write_consistency, deserialized.write_consistency);
     assert_eq!(ns.replication_factor, deserialized.replication_factor);
+    assert_eq!(ns.wal_fsync_mode, deserialized.wal_fsync_mode);
+    assert_eq!(
+        ns.wal_group_commit_interval_us,
+        deserialized.wal_group_commit_interval_us
+    );
+    assert_eq!(
+        ns.wal_batch_sync_interval_ms,
+        deserialized.wal_batch_sync_interval_ms
+    );
 }
 
 #[test]
@@ -244,6 +296,9 @@ fn test_serde_missing_optional_fields() {
     assert_eq!(ns.write_consistency, WriteConsistency::Quorum);
     assert_eq!(ns.replication_factor, 3);
     assert_eq!(ns.compaction_strategy, "LEVELED");
+    assert_eq!(ns.wal_fsync_mode, "sync");
+    assert_eq!(ns.wal_group_commit_interval_us, 200);
+    assert_eq!(ns.wal_batch_sync_interval_ms, 10);
 }
 
 #[test]
@@ -348,7 +403,10 @@ fn test_engine_config_defaults() {
 
     // fp=0.01 -> ~10 bits per key
     let expected_bits = (-(0.01_f64).ln() / (2.0_f64.ln().powi(2))).ceil() as u32;
-    assert_eq!(engine_cfg.flush_config.sst_config.bloom_bits_per_key, expected_bits);
+    assert_eq!(
+        engine_cfg.flush_config.sst_config.bloom_bits_per_key,
+        expected_bits
+    );
 }
 
 #[test]
@@ -363,5 +421,8 @@ fn test_engine_config_custom_values() {
     assert_eq!(engine_cfg.memtable_config.size_threshold, 128 * 1024 * 1024);
 
     let expected_bits = (-(0.001_f64).ln() / (2.0_f64.ln().powi(2))).ceil() as u32;
-    assert_eq!(engine_cfg.flush_config.sst_config.bloom_bits_per_key, expected_bits);
+    assert_eq!(
+        engine_cfg.flush_config.sst_config.bloom_bits_per_key,
+        expected_bits
+    );
 }

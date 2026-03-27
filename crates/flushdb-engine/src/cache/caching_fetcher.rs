@@ -62,7 +62,10 @@ impl CachingBlockFetcher {
             });
         }
 
-        let entries = self.inner.fetch_block(sst_path, offset, size, compression).await?;
+        let entries = self
+            .inner
+            .fetch_block(sst_path, offset, size, compression)
+            .await?;
         let cached_block = CachedBlock::new(entries.clone());
         self.cache.insert(key, cached_block);
         Ok(entries)
@@ -88,18 +91,16 @@ impl BlockFetcher for CachingBlockFetcher {
             return Ok(cached.entries().to_vec());
         }
 
-        let entries = self.inner.fetch_block(sst_path, offset, size, compression).await?;
+        let entries = self
+            .inner
+            .fetch_block(sst_path, offset, size, compression)
+            .await?;
         let cached = CachedBlock::new(entries.clone());
         self.cache.insert(key, cached);
         Ok(entries)
     }
 
-    async fn fetch_raw_block(
-        &self,
-        sst_path: &str,
-        offset: u64,
-        size: u32,
-    ) -> FlushResult<Bytes> {
+    async fn fetch_raw_block(&self, sst_path: &str, offset: u64, size: u32) -> FlushResult<Bytes> {
         self.inner.fetch_raw_block(sst_path, offset, size).await
     }
 }

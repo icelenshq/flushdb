@@ -364,12 +364,7 @@ fn test_scan_record_with_multiple_versions() {
 
     let collected: Vec<(u64, &str)> = sl
         .scan_record(b"rec1")
-        .map(|n| {
-            (
-                n.sequence_number,
-                std::str::from_utf8(&n.value).unwrap(),
-            )
-        })
+        .map(|n| (n.sequence_number, std::str::from_utf8(&n.value).unwrap()))
         .collect();
 
     // Should be sorted seq DESC: 5, 3, 1
@@ -394,10 +389,7 @@ fn test_scan_record_includes_tombstones() {
     );
     sl.insert(entry);
 
-    let collected: Vec<EntryType> = sl
-        .scan_record(b"rec1")
-        .map(|n| n.entry_type)
-        .collect();
+    let collected: Vec<EntryType> = sl.scan_record(b"rec1").map(|n| n.entry_type).collect();
 
     assert!(collected.contains(&EntryType::Put));
     assert!(collected.contains(&EntryType::Delete));

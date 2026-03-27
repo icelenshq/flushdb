@@ -9,7 +9,9 @@ use crate::NamespaceConfig;
 
 #[derive(Debug, Clone)]
 pub enum ParsedPredicate {
-    MatchKeys { keys: Vec<Bytes> },
+    MatchKeys {
+        keys: Vec<Bytes>,
+    },
     MatchRange {
         start_key: Option<Bytes>,
         end_key: Option<Bytes>,
@@ -66,18 +68,12 @@ pub fn ordered_key_to_proto(key: &OrderedKey) -> proto::OrderedKey {
 pub fn proto_to_ordered_key(proto: &proto::OrderedKey) -> FlushResult<OrderedKey> {
     if proto.node_id > 65535 {
         return Err(FlushError::InvalidArgument {
-            message: format!(
-                "node_id {} exceeds u16 maximum of 65535",
-                proto.node_id
-            ),
+            message: format!("node_id {} exceeds u16 maximum of 65535", proto.node_id),
         });
     }
     if proto.sequence > 65535 {
         return Err(FlushError::InvalidArgument {
-            message: format!(
-                "sequence {} exceeds u16 maximum of 65535",
-                proto.sequence
-            ),
+            message: format!("sequence {} exceeds u16 maximum of 65535", proto.sequence),
         });
     }
     Ok(OrderedKey::new(
@@ -272,9 +268,7 @@ pub fn flush_error_to_status(err: FlushError) -> tonic::Status {
         FlushError::PreconditionFailed { .. } => {
             tonic::Status::failed_precondition(err.to_string())
         }
-        FlushError::ResourceExhausted { .. } => {
-            tonic::Status::resource_exhausted(err.to_string())
-        }
+        FlushError::ResourceExhausted { .. } => tonic::Status::resource_exhausted(err.to_string()),
         FlushError::EpochFenced { .. } => tonic::Status::aborted(err.to_string()),
         FlushError::CorruptedData { .. } => tonic::Status::internal(err.to_string()),
         FlushError::CrcMismatch { .. } => tonic::Status::internal(err.to_string()),

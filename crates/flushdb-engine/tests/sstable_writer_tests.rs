@@ -2,7 +2,9 @@ use bytes::Bytes;
 use flushdb_engine::sstable::bloom_filter::FilterBlock;
 use flushdb_engine::sstable::footer::{SstFooter, SstHeader};
 use flushdb_engine::sstable::index_block::IndexBlock;
-use flushdb_engine::sstable::writer::{generate_run_fragment_path, generate_sst_path, SSTableWriter};
+use flushdb_engine::sstable::writer::{
+    generate_run_fragment_path, generate_sst_path, SSTableWriter,
+};
 use flushdb_engine::sstable::{CompressionType, SstConfig, FOOTER_SIZE, HEADER_SIZE};
 use flushdb_types::{
     CompositeKey, EntryType, FlushError, IdempotencyToken, LocalFsBackend, MemtableEntry,
@@ -38,9 +40,7 @@ async fn write_sst(
     entries: Vec<MemtableEntry>,
 ) -> flushdb_types::FlushResult<flushdb_engine::sstable::writer::SstInfo> {
     let writer = SSTableWriter::new(config.clone());
-    writer
-        .write(backend, "test.sst", entries.into_iter())
-        .await
+    writer.write(backend, "test.sst", entries.into_iter()).await
 }
 
 // --- Basic Write Tests ---
@@ -270,7 +270,8 @@ async fn test_write_bloom_filter_readable() {
 
     let bloom_bytes = &data[footer.bloom_filter_offset as usize
         ..(footer.bloom_filter_offset as usize + footer.bloom_filter_size as usize)];
-    let filter = FilterBlock::deserialize(bloom_bytes).expect("bloom filter deserialization failed");
+    let filter =
+        FilterBlock::deserialize(bloom_bytes).expect("bloom filter deserialization failed");
 
     // Verify bloom filter contains the record_ids that were written
     assert!(filter.maybe_contains(b"record_0000"));
@@ -484,14 +485,13 @@ async fn test_write_entries_round_trip() {
     let data = backend.get("original.sst").await.unwrap();
     let file_size = data.len() as u64;
     let reader_backend = LocalFsBackend::new(tmp.path());
-    let mut reader =
-        flushdb_engine::sstable::reader::SSTableReader::open(
-            reader_backend,
-            "original.sst".to_string(),
-            file_size,
-        )
-        .await
-        .unwrap();
+    let mut reader = flushdb_engine::sstable::reader::SSTableReader::open(
+        reader_backend,
+        "original.sst".to_string(),
+        file_size,
+    )
+    .await
+    .unwrap();
     reader.load_metadata().await.unwrap();
 
     let mut iter = flushdb_engine::sstable::reader::SstableIterator::new(&reader);
@@ -515,14 +515,13 @@ async fn test_write_entries_round_trip() {
     let rewritten_data = backend.get("rewritten.sst").await.unwrap();
     let rewritten_size = rewritten_data.len() as u64;
     let rewritten_backend = LocalFsBackend::new(tmp.path());
-    let mut rewritten_reader =
-        flushdb_engine::sstable::reader::SSTableReader::open(
-            rewritten_backend,
-            "rewritten.sst".to_string(),
-            rewritten_size,
-        )
-        .await
-        .unwrap();
+    let mut rewritten_reader = flushdb_engine::sstable::reader::SSTableReader::open(
+        rewritten_backend,
+        "rewritten.sst".to_string(),
+        rewritten_size,
+    )
+    .await
+    .unwrap();
     rewritten_reader.load_metadata().await.unwrap();
 
     let mut rewritten_iter =
@@ -533,15 +532,16 @@ async fn test_write_entries_round_trip() {
     }
 
     assert_eq!(rewritten_entries.len(), 30);
-    for (i, (orig, rewritten)) in block_entries.iter().zip(rewritten_entries.iter()).enumerate() {
+    for (i, (orig, rewritten)) in block_entries
+        .iter()
+        .zip(rewritten_entries.iter())
+        .enumerate()
+    {
         assert_eq!(
             orig.composite_key, rewritten.composite_key,
             "key mismatch at index {i}"
         );
-        assert_eq!(
-            orig.value, rewritten.value,
-            "value mismatch at index {i}"
-        );
+        assert_eq!(orig.value, rewritten.value, "value mismatch at index {i}");
         assert_eq!(
             orig.entry_type, rewritten.entry_type,
             "entry_type mismatch at index {i}"
@@ -644,8 +644,5 @@ async fn test_generate_sst_path_format() {
 #[tokio::test]
 async fn test_generate_run_fragment_path_format() {
     let path = generate_run_fragment_path("ns", 1, "run_abc", 3);
-    assert_eq!(
-        path,
-        "flushdb/ns/sstables/L1/run-run_abc/frag-0003.sst"
-    );
+    assert_eq!(path, "flushdb/ns/sstables/L1/run-run_abc/frag-0003.sst");
 }

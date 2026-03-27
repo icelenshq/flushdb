@@ -41,10 +41,7 @@ fn format_count(n: u64) -> String {
 
 pub async fn run(config: &IngestConfig) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("=== Ingestion Benchmark ===");
-    println!(
-        "Total products:  {}",
-        format_count(config.total_products)
-    );
+    println!("Total products:  {}", format_count(config.total_products));
     println!("Concurrency:     {} workers", config.concurrency);
     println!(
         "Report every:    {} products",
@@ -63,9 +60,7 @@ pub async fn run(config: &IngestConfig) -> Result<(), Box<dyn std::error::Error 
         "  Done: {} products in {:.1}s ({} products/sec)\n",
         format_count(flushdb_result.total),
         flushdb_result.elapsed.as_secs_f64(),
-        format_count(
-            (flushdb_result.total as f64 / flushdb_result.elapsed.as_secs_f64()) as u64
-        ),
+        format_count((flushdb_result.total as f64 / flushdb_result.elapsed.as_secs_f64()) as u64),
     );
 
     // --- Cassandra ingestion ---

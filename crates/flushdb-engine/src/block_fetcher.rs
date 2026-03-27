@@ -15,12 +15,7 @@ pub trait BlockFetcher: Send + Sync {
         compression: CompressionType,
     ) -> FlushResult<Vec<BlockEntry>>;
 
-    async fn fetch_raw_block(
-        &self,
-        sst_path: &str,
-        offset: u64,
-        size: u32,
-    ) -> FlushResult<Bytes>;
+    async fn fetch_raw_block(&self, sst_path: &str, offset: u64, size: u32) -> FlushResult<Bytes>;
 }
 
 pub struct DirectBlockFetcher<B: StorageBackend> {
@@ -53,14 +48,7 @@ impl<B: StorageBackend> BlockFetcher for DirectBlockFetcher<B> {
         decode_block(&raw, compression)
     }
 
-    async fn fetch_raw_block(
-        &self,
-        sst_path: &str,
-        offset: u64,
-        size: u32,
-    ) -> FlushResult<Bytes> {
-        self.backend
-            .get_range(sst_path, offset, size as u64)
-            .await
+    async fn fetch_raw_block(&self, sst_path: &str, offset: u64, size: u32) -> FlushResult<Bytes> {
+        self.backend.get_range(sst_path, offset, size as u64).await
     }
 }

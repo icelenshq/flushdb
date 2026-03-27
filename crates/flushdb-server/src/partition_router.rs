@@ -52,8 +52,7 @@ impl PartitionRouter for LocalPartitionRouter {
                         ),
                     });
                 }
-                let selected: Vec<&str> =
-                    field_indices.iter().map(|&i| fields[i]).collect();
+                let selected: Vec<&str> = field_indices.iter().map(|&i| fields[i]).collect();
                 let partition_key = selected.join(delimiter);
                 let hash = partition_hash(partition_key.as_bytes());
                 Ok(hash & self.partition_mask)

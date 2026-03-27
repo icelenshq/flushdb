@@ -2,6 +2,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use bytes::BytesMut;
 use flushdb_types::{FlushError, FlushResult};
 
 use crate::config::{segment_path, SEGMENT_HEADER_SIZE};
@@ -17,11 +18,7 @@ pub struct SegmentWriter {
 }
 
 impl SegmentWriter {
-    pub fn create(
-        dir: &Path,
-        segment_number: u64,
-        starting_sequence: u64,
-    ) -> FlushResult<Self> {
+    pub fn create(dir: &Path, segment_number: u64, starting_sequence: u64) -> FlushResult<Self> {
         fs::create_dir_all(dir)?;
 
         let path = segment_path(dir, segment_number);
@@ -55,10 +52,10 @@ impl SegmentWriter {
     }
 
     pub fn append_batch(&mut self, entries: &[WalEntry]) -> FlushResult<()> {
-        let mut buf = Vec::new();
+        let total_size = entries.iter().map(WalEntry::total_size).sum();
+        let mut buf = BytesMut::with_capacity(total_size);
         for entry in entries {
-            let encoded = entry.encode();
-            buf.extend_from_slice(&encoded);
+            entry.encode_into(&mut buf);
         }
         self.file.write_all(&buf)?;
         self.current_size += buf.len() as u64;

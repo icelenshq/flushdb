@@ -211,10 +211,7 @@ impl SSTableHandle {
         end: Option<&CompositeKey>,
         fetcher: &dyn BlockFetcher,
     ) -> FlushResult<Vec<BlockEntry>> {
-        let start_idx = self
-            .index_block
-            .find_block_index(start)
-            .unwrap_or(0);
+        let start_idx = self.index_block.find_block_index(start).unwrap_or(0);
 
         let mut result = Vec::new();
 
@@ -287,10 +284,7 @@ impl LevelState {
         }
     }
 
-    pub fn find_candidates_for_key<'a>(
-        &'a self,
-        key: &CompositeKey,
-    ) -> Vec<&'a SSTableHandle> {
+    pub fn find_candidates_for_key<'a>(&'a self, key: &CompositeKey) -> Vec<&'a SSTableHandle> {
         if self.level.is_overlapping() {
             // L0: return all handles that pass bloom filter
             self.handles

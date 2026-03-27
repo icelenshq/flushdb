@@ -1,8 +1,9 @@
 use bytes::Bytes;
 use tonic::{Request, Response, Status};
 
+use flushdb_engine::PutBatchItem;
 use flushdb_proto::flushdb::v1 as proto;
-use flushdb_types::{FlushError, StorageBackend};
+use flushdb_types::StorageBackend;
 
 use crate::conversions::{
     flush_error_to_status, ordered_key_to_proto, parse_predicate, proto_to_idempotency_token,
@@ -16,35 +17,36 @@ pub async fn handle_put_items<B: StorageBackend + Clone + 'static>(
     request: Request<proto::PutItemsRequest>,
 ) -> Result<Response<proto::PutItemsResponse>, Status> {
     let req = request.into_inner();
+    let proto::PutItemsRequest {
+        idempotency_token,
+        namespace,
+        id,
+        items,
+    } = req;
 
-    validate_namespace(&req.namespace).map_err(flush_error_to_status)?;
-    validate_record_id(&req.id).map_err(flush_error_to_status)?;
-    validate_items(&req.items).map_err(flush_error_to_status)?;
+    validate_namespace(&namespace).map_err(flush_error_to_status)?;
+    validate_record_id(&id).map_err(flush_error_to_status)?;
+    validate_items(&items).map_err(flush_error_to_status)?;
 
     let base_token =
-        proto_to_idempotency_token(req.idempotency_token).map_err(flush_error_to_status)?;
+        proto_to_idempotency_token(idempotency_token).map_err(flush_error_to_status)?;
 
-    for (index, item) in req.items.iter().enumerate() {
-        let item_token = base_token.derive_for_index(index as u32);
-        match service
-            .namespace_manager
-            .put(
-                &req.namespace,
-                &req.id,
-                &item.key,
-                Bytes::from(item.value.clone()),
-                Bytes::from(item.metadata.clone()),
-                item_token,
-            )
-            .await
-        {
-            Ok(_) => {}
-            Err(FlushError::DuplicateToken { .. }) => {
-                // Idempotent retry — data already written, return success
-            }
-            Err(e) => return Err(flush_error_to_status(e)),
-        }
-    }
+    let items = items
+        .into_iter()
+        .enumerate()
+        .map(|(index, item)| PutBatchItem {
+            item_key: Bytes::from(item.key),
+            value: Bytes::from(item.value),
+            metadata: Bytes::from(item.metadata),
+            idempotency_token: base_token.derive_for_index(index as u32),
+        })
+        .collect();
+
+    service
+        .namespace_manager
+        .put_batch(&namespace, &id, items)
+        .await
+        .map_err(flush_error_to_status)?;
 
     let version = service.version_generator.next_version();
 

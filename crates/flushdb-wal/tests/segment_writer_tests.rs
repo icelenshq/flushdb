@@ -119,7 +119,10 @@ fn test_append_returns_correct_offset() {
 
     let entry2 = make_entry(2);
     let offset2 = writer.append(&entry2).unwrap();
-    assert_eq!(offset2, SEGMENT_HEADER_SIZE as u64 + entry1.total_size() as u64);
+    assert_eq!(
+        offset2,
+        SEGMENT_HEADER_SIZE as u64 + entry1.total_size() as u64
+    );
 }
 
 // === File Content Tests ===

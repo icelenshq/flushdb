@@ -109,7 +109,7 @@ impl Memtable {
         }
     }
 
-    pub fn insert(&mut self, mut entry: MemtableEntry) -> FlushResult<u64> {
+    pub fn insert(&mut self, entry: MemtableEntry) -> FlushResult<u64> {
         if self.frozen {
             return Err(FlushError::ResourceExhausted {
                 resource: "memtable".into(),
@@ -123,10 +123,51 @@ impl Memtable {
             });
         }
 
+        self.insert_prechecked(entry)
+    }
+
+    pub(crate) fn insert_prechecked(&mut self, mut entry: MemtableEntry) -> FlushResult<u64> {
+        if self.frozen {
+            return Err(FlushError::ResourceExhausted {
+                resource: "memtable".into(),
+                message: "memtable is frozen".into(),
+            });
+        }
+
         let seq = self.next_sequence_number;
         entry.sequence_number = seq;
         self.next_sequence_number += 1;
 
+        self.insert_inner(entry);
+
+        Ok(seq)
+    }
+
+    /// Insert an entry whose sequence number was already assigned by the engine.
+    /// Used by the batch write path where the engine is the sole authority on
+    /// sequence numbers (they must match what was written to the WAL).
+    pub(crate) fn insert_with_assigned_sequence(
+        &mut self,
+        entry: MemtableEntry,
+    ) -> FlushResult<u64> {
+        if self.frozen {
+            return Err(FlushError::ResourceExhausted {
+                resource: "memtable".into(),
+                message: "memtable is frozen".into(),
+            });
+        }
+
+        let seq = entry.sequence_number;
+        if seq >= self.next_sequence_number {
+            self.next_sequence_number = seq + 1;
+        }
+
+        self.insert_inner(entry);
+
+        Ok(seq)
+    }
+
+    fn insert_inner(&mut self, entry: MemtableEntry) {
         if entry.entry_type == EntryType::RangeDelete {
             let item_key = entry.composite_key.item_key();
             let start_key = if item_key.is_empty() {
@@ -144,8 +185,6 @@ impl Memtable {
 
         self.dedup_set.insert(entry.idempotency_key);
         self.skiplist.insert(entry);
-
-        Ok(seq)
     }
 
     pub fn get(&self, key: &CompositeKey) -> Option<MemtableEntry> {

@@ -13,11 +13,15 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    volumes:
+      - minio-data:/data
     deploy:
       resources:
         limits:
           cpus: '1'
           memory: 512M
+    profiles:
+      - flushdb
 
   minio-init:
     image: minio/mc:latest
@@ -27,9 +31,12 @@ services:
     entrypoint: >
       /bin/sh -c "
       mc alias set local http://minio:9000 minioadmin minioadmin;
-      mc mb local/flushdb --ignore-existing;
+      mc rb --force local/flushdb 2>/dev/null || true;
+      mc mb local/flushdb;
       exit 0;
       "
+    profiles:
+      - flushdb
 
   flushdb-server:
     build:
@@ -44,8 +51,10 @@ services:
       FLUSHDB_S3_BUCKET: flushdb
       FLUSHDB_NODE_ID: "1"
       FLUSHDB_DATA_DIR: /data
-      FLUSHDB_DEFAULT_NAMESPACES: "ecommerce:4"
+      FLUSHDB_DEFAULT_NAMESPACES: "ecommerce:8"
       FLUSHDB_DEFAULT_MEMTABLE_SIZE_MB: "32"
+      FLUSHDB_DEFAULT_WAL_FSYNC_MODE: "batch_sync"
+      FLUSHDB_DEFAULT_WAL_BATCH_SYNC_INTERVAL_MS: "10"
       AWS_ACCESS_KEY_ID: minioadmin
       AWS_SECRET_ACCESS_KEY: minioadmin
       AWS_REGION: us-east-1
@@ -61,6 +70,8 @@ services:
         limits:
           cpus: '2'
           memory: 1024M
+    profiles:
+      - flushdb
 
   cassandra:
     image: cassandra:4.1
@@ -103,7 +114,7 @@ services:
           cpus: '2'
           memory: 1024M
     profiles:
-      - benchmark
+      - cassandra
 
   flushdb-demo:
     build:
@@ -113,11 +124,10 @@ services:
     environment:
       FLUSHDB_SERVER_ADDR: "http://flushdb-server:50051"
       CASSANDRA_ADDR: "cassandra:9042"
-    depends_on:
-      - flushdb-server
     profiles:
       - demo
 
 volumes:
   server-data:
+  minio-data:
   cassandra-data:

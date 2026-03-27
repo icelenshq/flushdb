@@ -9,7 +9,10 @@ fn test_encode_decode_roundtrip() {
     let encoded = header.encode();
     let decoded = SegmentHeader::decode(&encoded).unwrap();
     assert_eq!(header.segment_number, decoded.segment_number);
-    assert_eq!(header.starting_sequence_number, decoded.starting_sequence_number);
+    assert_eq!(
+        header.starting_sequence_number,
+        decoded.starting_sequence_number
+    );
     assert_eq!(header.created_at_ms, decoded.created_at_ms);
 }
 

@@ -66,10 +66,9 @@ async fn test_memtable_to_sstable_round_trip() {
     let data = backend.get("roundtrip.sst").await.unwrap();
     let file_size = data.len() as u64;
     let reader_backend = LocalFsBackend::new(tmp.path());
-    let mut reader =
-        SSTableReader::open(reader_backend, "roundtrip.sst".to_string(), file_size)
-            .await
-            .unwrap();
+    let mut reader = SSTableReader::open(reader_backend, "roundtrip.sst".to_string(), file_size)
+        .await
+        .unwrap();
     reader.load_metadata().await.unwrap();
 
     assert_eq!(reader.entry_count(), 50);
@@ -166,10 +165,9 @@ async fn test_sstable_with_range_tombstones() {
     let data = backend.get("tombstones.sst").await.unwrap();
     let file_size = data.len() as u64;
     let reader_backend = LocalFsBackend::new(tmp.path());
-    let mut reader =
-        SSTableReader::open(reader_backend, "tombstones.sst".to_string(), file_size)
-            .await
-            .unwrap();
+    let mut reader = SSTableReader::open(reader_backend, "tombstones.sst".to_string(), file_size)
+        .await
+        .unwrap();
     reader.load_metadata().await.unwrap();
 
     let mut iter = SstableIterator::new(&reader);
@@ -191,17 +189,17 @@ async fn test_sstable_with_range_tombstones() {
     // Verify Put values survived
     for put in &puts {
         assert!(put.value.is_inline(), "Put value should be Inline");
-        assert!(!put.value.inline_value().unwrap().is_empty(), "Put value should not be empty");
+        assert!(
+            !put.value.inline_value().unwrap().is_empty(),
+            "Put value should not be empty"
+        );
     }
 
     // Verify Delete has empty value
     assert_eq!(deletes[0].value, EntryValue::Inline(Bytes::new()));
 
     // Verify RangeDelete has its end_key value
-    assert_eq!(
-        deletes[0].composite_key.record_id(),
-        b"record_0020"
-    );
+    assert_eq!(deletes[0].composite_key.record_id(), b"record_0020");
     assert_eq!(
         range_deletes[0].value,
         EntryValue::Inline(Bytes::from("end_range"))

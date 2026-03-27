@@ -90,7 +90,10 @@ fn test_sort_null_byte_in_item_key() {
 fn test_sort_range_tombstone_after_data() {
     let data = CompositeKey::new(b"r", b"z").unwrap();
     let tombstone = CompositeKey::range_tombstone_key(b"r", b"a").unwrap();
-    assert!(data < tombstone, "range tombstone must sort after data keys");
+    assert!(
+        data < tombstone,
+        "range tombstone must sort after data keys"
+    );
 }
 
 #[test]
@@ -136,10 +139,7 @@ fn test_sort_cross_record_boundary() {
 
     for aaa in &aaa_keys {
         for aab in &aab_keys {
-            assert!(
-                aaa < aab,
-                "all 'aaa' keys must sort before any 'aab' key"
-            );
+            assert!(aaa < aab, "all 'aaa' keys must sort before any 'aab' key");
         }
     }
 }
@@ -322,7 +322,10 @@ fn test_max_key_sorts_between_data_and_tombstone() {
 
     // data < max <= tombstone (max has just 0xFF, tombstone has 0xFF + start_key)
     assert!(data < max, "data keys must sort before max_key");
-    assert!(max <= tombstone, "max_key must sort at or before tombstone keys with payload");
+    assert!(
+        max <= tombstone,
+        "max_key must sort at or before tombstone keys with payload"
+    );
 }
 
 #[test]
@@ -347,7 +350,11 @@ fn test_hash_consistency() {
         hasher.finish()
     }
 
-    assert_eq!(hash_of(&a), hash_of(&b), "equal keys must have equal hashes");
+    assert_eq!(
+        hash_of(&a),
+        hash_of(&b),
+        "equal keys must have equal hashes"
+    );
 }
 
 #[test]

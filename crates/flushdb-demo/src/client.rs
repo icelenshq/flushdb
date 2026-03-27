@@ -58,9 +58,9 @@ impl DemoClient {
             namespace: namespace.to_string(),
             id: record_id.to_string(),
             predicate: Some(Predicate {
-                predicate: Some(
-                    flushdb_proto::flushdb::v1::predicate::Predicate::MatchKeys(MatchKeys { keys }),
-                ),
+                predicate: Some(flushdb_proto::flushdb::v1::predicate::Predicate::MatchKeys(
+                    MatchKeys { keys },
+                )),
             }),
             selection: None,
             signals: Default::default(),
@@ -77,9 +77,9 @@ impl DemoClient {
             namespace: namespace.to_string(),
             id: record_id.to_string(),
             predicate: Some(Predicate {
-                predicate: Some(
-                    flushdb_proto::flushdb::v1::predicate::Predicate::MatchAll(true),
-                ),
+                predicate: Some(flushdb_proto::flushdb::v1::predicate::Predicate::MatchAll(
+                    true,
+                )),
             }),
             selection: None,
             signals: Default::default(),
@@ -127,9 +127,9 @@ impl DemoClient {
             namespace: namespace.to_string(),
             id: record_id.to_string(),
             predicate: Some(Predicate {
-                predicate: Some(
-                    flushdb_proto::flushdb::v1::predicate::Predicate::MatchAll(true),
-                ),
+                predicate: Some(flushdb_proto::flushdb::v1::predicate::Predicate::MatchAll(
+                    true,
+                )),
             }),
         };
         self.inner.delete_items(req).await?;

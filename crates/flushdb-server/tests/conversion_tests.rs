@@ -152,14 +152,12 @@ fn test_parse_match_keys() {
 #[test]
 fn test_parse_match_range() {
     let pred = proto::Predicate {
-        predicate: Some(proto::predicate::Predicate::MatchRange(
-            proto::MatchRange {
-                start_key: b"aaa".to_vec(),
-                end_key: b"zzz".to_vec(),
-                start_inclusive: true,
-                end_inclusive: false,
-            },
-        )),
+        predicate: Some(proto::predicate::Predicate::MatchRange(proto::MatchRange {
+            start_key: b"aaa".to_vec(),
+            end_key: b"zzz".to_vec(),
+            start_inclusive: true,
+            end_inclusive: false,
+        })),
     };
     let parsed = parse_predicate(Some(pred)).expect("should succeed");
     match parsed {
@@ -234,14 +232,12 @@ fn test_parse_match_keys_empty() {
 #[test]
 fn test_parse_match_range_inverted() {
     let pred = proto::Predicate {
-        predicate: Some(proto::predicate::Predicate::MatchRange(
-            proto::MatchRange {
-                start_key: b"zzz".to_vec(),
-                end_key: b"aaa".to_vec(),
-                start_inclusive: true,
-                end_inclusive: true,
-            },
-        )),
+        predicate: Some(proto::predicate::Predicate::MatchRange(proto::MatchRange {
+            start_key: b"zzz".to_vec(),
+            end_key: b"aaa".to_vec(),
+            start_inclusive: true,
+            end_inclusive: true,
+        })),
     };
     let result = parse_predicate(Some(pred));
     assert!(result.is_err());
@@ -269,7 +265,10 @@ fn test_parse_selection_defaults() {
         page_token: vec![],
     };
     let (opts, exclude) = parse_selection(Some(sel), &config).expect("should succeed");
-    assert_eq!(opts.page_size_bytes, config.default_page_size_bytes as usize);
+    assert_eq!(
+        opts.page_size_bytes,
+        config.default_page_size_bytes as usize
+    );
     assert!(opts.item_limit.is_none());
     assert!(opts.resume_from.is_none());
     assert!(!exclude);
@@ -294,7 +293,10 @@ fn test_parse_selection_capped() {
 fn test_parse_selection_none() {
     let config = test_namespace_config();
     let (opts, exclude) = parse_selection(None, &config).expect("should succeed");
-    assert_eq!(opts.page_size_bytes, config.default_page_size_bytes as usize);
+    assert_eq!(
+        opts.page_size_bytes,
+        config.default_page_size_bytes as usize
+    );
     assert!(opts.item_limit.is_none());
     assert!(opts.resume_from.is_none());
     assert!(!exclude);
@@ -311,11 +313,7 @@ fn make_get_result(item_key: &[u8], value: &[u8], metadata: &[u8]) -> GetResult 
     }
 }
 
-fn make_merge_entry(
-    item_key: &[u8],
-    value: &[u8],
-    entry_type: EntryType,
-) -> MergeEntry {
+fn make_merge_entry(item_key: &[u8], value: &[u8], entry_type: EntryType) -> MergeEntry {
     MergeEntry {
         composite_key: CompositeKey::new(b"record1", item_key).expect("valid key"),
         value: Bytes::copy_from_slice(value),

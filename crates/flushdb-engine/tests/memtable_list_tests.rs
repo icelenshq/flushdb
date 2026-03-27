@@ -301,11 +301,19 @@ fn test_pop_oldest_frozen() {
 
     let oldest = list.pop_oldest_frozen().expect("should have frozen");
     let key = CompositeKey::new(b"r1", b"k1").unwrap();
-    assert!(oldest.get(&key).is_some(), "oldest should contain first entry");
+    assert!(
+        oldest.get(&key).is_some(),
+        "oldest should contain first entry"
+    );
 
-    let next = list.pop_oldest_frozen().expect("should have another frozen");
+    let next = list
+        .pop_oldest_frozen()
+        .expect("should have another frozen");
     let key2 = CompositeKey::new(b"r1", b"k2").unwrap();
-    assert!(next.get(&key2).is_some(), "next should contain second entry");
+    assert!(
+        next.get(&key2).is_some(),
+        "next should contain second entry"
+    );
 }
 
 #[test]
@@ -483,8 +491,12 @@ fn test_should_freeze_by_size() {
     assert!(!list.should_freeze(std::time::Duration::from_secs(3600)));
 
     for i in 0..20 {
-        list.insert(make_put("r1", &format!("key{i:04}"), "some_value_that_takes_space"))
-            .unwrap();
+        list.insert(make_put(
+            "r1",
+            &format!("key{i:04}"),
+            "some_value_that_takes_space",
+        ))
+        .unwrap();
     }
     assert!(list.should_freeze(std::time::Duration::from_secs(3600)));
 }
@@ -832,8 +844,12 @@ fn test_is_memory_backpressured_over_limit() {
     );
 
     for i in 0..20 {
-        list.insert(make_put("r1", &format!("key{i:04}"), "some_value_that_takes_space"))
-            .unwrap();
+        list.insert(make_put(
+            "r1",
+            &format!("key{i:04}"),
+            "some_value_that_takes_space",
+        ))
+        .unwrap();
     }
 
     assert!(list.is_memory_backpressured());
@@ -845,7 +861,8 @@ fn test_is_memory_backpressured_over_limit() {
 fn test_check_dedup_ok_for_new_token() {
     let list = new_list();
     let token = make_token(42);
-    list.check_dedup(&token).expect("unseen token should pass check_dedup");
+    list.check_dedup(&token)
+        .expect("unseen token should pass check_dedup");
 }
 
 #[test]

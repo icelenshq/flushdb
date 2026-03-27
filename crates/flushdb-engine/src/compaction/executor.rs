@@ -4,16 +4,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use flushdb_types::{FlushResult, MemtableEntry, StorageBackend};
 
 use crate::block_fetcher::BlockFetcher;
+use crate::compaction::scheduler::{CompactionConfig, CompactionTask, CompactionType};
 use crate::manifest::manager::ManifestManager;
-use crate::manifest::types::{
-    Level, ManifestUpdate, ManifestUpdateTrigger, SSTableMeta,
-};
+use crate::manifest::types::{Level, ManifestUpdate, ManifestUpdateTrigger, SSTableMeta};
 use crate::merge_iterator::{MergeEntry, MergeIterator, VecSource};
 use crate::sstable::block_reader::BlockEntry;
-use crate::sstable::writer::SSTableWriter;
 use crate::sstable::types::SstConfig;
+use crate::sstable::writer::SSTableWriter;
 use crate::sstable_handle::SSTableHandle;
-use crate::compaction::scheduler::{CompactionConfig, CompactionTask, CompactionType};
 
 #[derive(Debug)]
 pub struct CompactionResult {
@@ -76,9 +74,23 @@ impl CompactionExecutor {
         }
 
         if !trivial_metas.is_empty() && non_trivial_inputs.is_empty() {
-            // All trivial — just update manifest
+            // Trivial move: the manifest level changes but the path is level-encoded, so we must
+            // physically copy each file to its new path before updating the manifest. Without the
+            // copy, the next compaction would try to open the file at the target-level path and
+            // get a not-found error because the bytes are still at the source-level path.
             let mut remove = Vec::new();
-            for input in &task.input_sstables {
+            let mut source_paths_to_delete: Vec<String> = Vec::new();
+            let mut bytes_copied: u64 = 0;
+
+            for (input, (target_level, _moved_meta)) in
+                task.input_sstables.iter().zip(trivial_metas.iter())
+            {
+                let src_path = input.sst_path(&self.namespace, task.source_level);
+                let dst_path = input.sst_path(&self.namespace, *target_level);
+                let data = backend.get(&src_path).await?;
+                bytes_copied += data.len() as u64;
+                backend.put(&dst_path, data).await?;
+                source_paths_to_delete.push(src_path);
                 remove.push((task.source_level, input.id.clone()));
             }
 
@@ -92,7 +104,13 @@ impl CompactionExecutor {
             };
             manifest_manager.update(update).await?;
 
-            let removed_ids: Vec<String> = task.input_sstables.iter().map(|m| m.id.clone()).collect();
+            // Schedule old source-level files for deletion after manifest is committed.
+            for path in source_paths_to_delete {
+                backend.delete(&path).await?;
+            }
+
+            let removed_ids: Vec<String> =
+                task.input_sstables.iter().map(|m| m.id.clone()).collect();
 
             return Ok(CompactionResult {
                 output_sstables: trivial_metas.into_iter().map(|(_, m)| m).collect(),
@@ -100,8 +118,8 @@ impl CompactionExecutor {
                 trivial_moves,
                 entries_written: 0,
                 entries_dropped: 0,
-                bytes_read: 0,
-                bytes_written: 0,
+                bytes_read: bytes_copied,
+                bytes_written: bytes_copied,
             });
         }
 
@@ -114,7 +132,14 @@ impl CompactionExecutor {
         let mut handles = Vec::new();
         let mut bytes_read: u64 = 0;
         for meta in &all_inputs {
-            let path = meta.sst_path(&self.namespace, if non_trivial_inputs.iter().any(|m| m.id == meta.id) { task.source_level } else { task.target_level });
+            let path = meta.sst_path(
+                &self.namespace,
+                if non_trivial_inputs.iter().any(|m| m.id == meta.id) {
+                    task.source_level
+                } else {
+                    task.target_level
+                },
+            );
             let handle = SSTableHandle::open((*meta).clone(), path, fetcher).await?;
             bytes_read += meta.size_bytes;
             handles.push(handle);
@@ -213,7 +238,9 @@ impl CompactionExecutor {
                     &run_id,
                     fragment_index,
                 );
-                let sst_info = writer.write(backend, &path, current_entries.drain(..)).await?;
+                let sst_info = writer
+                    .write(backend, &path, current_entries.drain(..))
+                    .await?;
 
                 let mut meta = SSTableMeta::from_sst_info(
                     &sst_info,
@@ -250,7 +277,9 @@ impl CompactionExecutor {
                     fragment_index,
                 )
             };
-            let sst_info = writer.write(backend, &path, current_entries.drain(..)).await?;
+            let sst_info = writer
+                .write(backend, &path, current_entries.drain(..))
+                .await?;
 
             let mut meta = SSTableMeta::from_sst_info(
                 &sst_info,
@@ -293,7 +322,8 @@ impl CompactionExecutor {
 
         manifest_manager.update(update).await?;
 
-        let mut removed_ids: Vec<String> = task.input_sstables.iter().map(|m| m.id.clone()).collect();
+        let mut removed_ids: Vec<String> =
+            task.input_sstables.iter().map(|m| m.id.clone()).collect();
         removed_ids.extend(task.target_sstables.iter().map(|m| m.id.clone()));
 
         Ok(CompactionResult {

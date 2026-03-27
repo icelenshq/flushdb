@@ -118,7 +118,10 @@ fn test_serialize_deterministic() {
 
     let bytes_a = builder_a.build().serialize();
     let bytes_b = builder_b.build().serialize();
-    assert_eq!(bytes_a, bytes_b, "same keys must produce identical serialized bytes");
+    assert_eq!(
+        bytes_a, bytes_b,
+        "same keys must produce identical serialized bytes"
+    );
 }
 
 #[test]
@@ -201,9 +204,7 @@ fn test_builder_deduplicates_record_ids() {
 
 #[test]
 fn test_builder_add_all_from_hashset() {
-    let keys: HashSet<Bytes> = (0..50)
-        .map(|i| Bytes::from(make_record_id(i)))
-        .collect();
+    let keys: HashSet<Bytes> = (0..50).map(|i| Bytes::from(make_record_id(i))).collect();
 
     let mut builder_individual = BloomFilterBuilder::new(10);
     for k in &keys {

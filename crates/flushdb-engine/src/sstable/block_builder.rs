@@ -6,8 +6,8 @@ use flushdb_types::{
     CompositeKey, EntryType, EntryValue, FlushError, FlushResult, IdempotencyToken,
 };
 
-use super::varint::encode_varint;
 use super::types::CompressionType;
+use super::varint::encode_varint;
 
 #[derive(Debug)]
 pub struct FinishedBlock {
@@ -123,13 +123,12 @@ impl BlockBuilder {
             CompressionType::None => self.buffer,
             CompressionType::Snappy => {
                 let mut encoder = snap::raw::Encoder::new();
-                encoder.compress_vec(&self.buffer).map_err(|e| {
-                    FlushError::Io(io::Error::other(e.to_string()))
-                })?
+                encoder
+                    .compress_vec(&self.buffer)
+                    .map_err(|e| FlushError::Io(io::Error::other(e.to_string())))?
             }
-            CompressionType::Zstd => zstd::bulk::compress(&self.buffer, 3).map_err(|e| {
-                FlushError::Io(io::Error::other(e.to_string()))
-            })?,
+            CompressionType::Zstd => zstd::bulk::compress(&self.buffer, 3)
+                .map_err(|e| FlushError::Io(io::Error::other(e.to_string())))?,
         };
 
         Ok(FinishedBlock {

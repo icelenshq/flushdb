@@ -40,6 +40,11 @@ async fn create_default_namespaces<B: StorageBackend + Clone + Send + Sync + 'st
         match NamespaceConfig::new(name.clone(), *partition_count) {
             Ok(mut ns_config) => {
                 ns_config.memtable_size_threshold = memtable_bytes;
+                ns_config.wal_fsync_mode = server.config().default_wal_fsync_mode.clone();
+                ns_config.wal_group_commit_interval_us =
+                    server.config().default_wal_group_commit_interval_us;
+                ns_config.wal_batch_sync_interval_ms =
+                    server.config().default_wal_batch_sync_interval_ms;
                 match server.namespace_manager().create_namespace(ns_config).await {
                     Ok(()) => {
                         tracing::info!(

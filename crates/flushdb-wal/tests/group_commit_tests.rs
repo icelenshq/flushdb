@@ -3,9 +3,7 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 use flushdb_types::{EntryType, IdempotencyToken};
-use flushdb_wal::{
-    FsyncMode, GroupCommitBuffer, WalConfig, WalEntry, WalReader, WalWriter,
-};
+use flushdb_wal::{FsyncMode, GroupCommitBuffer, WalConfig, WalEntry, WalReader, WalWriter};
 
 fn make_entry() -> WalEntry {
     WalEntry {
@@ -65,6 +63,21 @@ async fn test_multiple_writes_all_notified() {
     let reader = WalReader::open(dir.path()).unwrap();
     let entries = reader.replay_all().unwrap();
     assert_eq!(entries.len(), 10);
+}
+
+#[tokio::test]
+async fn test_submit_batch_writes_all_entries() {
+    let (dir, buffer, _handle, _seg) = setup(WalConfig::default());
+    let notification = buffer
+        .submit_batch(vec![make_entry(), make_entry(), make_entry()])
+        .await
+        .unwrap();
+    let result = notification.await.unwrap();
+    assert!(result.is_ok());
+
+    let reader = WalReader::open(dir.path()).unwrap();
+    let entries = reader.replay_all().unwrap();
+    assert_eq!(entries.len(), 3);
 }
 
 #[tokio::test]
@@ -269,4 +282,3 @@ async fn test_shutdown_drains_pending_writes() {
     let entries = reader.replay_all().unwrap();
     assert_eq!(entries.len(), 10);
 }
-

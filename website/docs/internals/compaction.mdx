@@ -46,7 +46,7 @@ sstables/L1/run-{id}/frag-0002.sst
 
 Max temporary space = `2 × fragment_size` instead of `2 × total_run_size`.
 
-**Trivial move:** If a fragment's key range doesn't overlap the next level, it's "moved" by manifest-only update — zero S3 I/O. For time-ordered keys, most compactions are trivial moves.
+**Trivial move:** If a fragment's key range doesn't overlap the next level, it's moved without re-merge. The executor physically copies the SSTable file from the source-level path to the target-level path, updates the manifest, then deletes the source. This is necessary because SSTable paths are level-encoded — a manifest-only update would leave the file at the old path, causing not-found errors on subsequent reads. For time-ordered keys, most compactions are trivial moves.
 
 ## Tombstone Lifecycle
 

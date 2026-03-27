@@ -320,7 +320,7 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "text": "group commit:\nfsync 200\u00b5s / 256KB",
+      "text": "single + batch append\nfsync 200\u00b5s / 256KB",
       "fontSize": 12,
       "fontFamily": 1,
       "textAlign": "left",
@@ -328,7 +328,7 @@
       "lineHeight": 1.25,
       "autoResize": true,
       "containerId": null,
-      "originalText": "group commit:\nfsync 200\u00b5s / 256KB"
+      "originalText": "single + batch append\nfsync 200\u00b5s / 256KB"
     },
     {
       "id": "wp11",
@@ -452,7 +452,7 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "text": "SkipList,\narena allocator",
+      "text": "SkipList + arena\nbatch fast path",
       "fontSize": 12,
       "fontFamily": 1,
       "textAlign": "left",
@@ -460,7 +460,7 @@
       "lineHeight": 1.25,
       "autoResize": true,
       "containerId": null,
-      "originalText": "SkipList,\narena allocator"
+      "originalText": "SkipList + arena\nbatch fast path"
     },
     {
       "id": "wp15",
@@ -584,7 +584,7 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "text": "after fsync",
+      "text": "after durable\ncommit",
       "fontSize": 12,
       "fontFamily": 1,
       "textAlign": "left",
@@ -592,7 +592,7 @@
       "lineHeight": 1.25,
       "autoResize": true,
       "containerId": null,
-      "originalText": "after fsync"
+      "originalText": "after durable\ncommit"
     },
     {
       "id": "wp19",
@@ -716,7 +716,7 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "text": "Freeze",
+      "text": "Freeze + gen",
       "fontSize": 14,
       "fontFamily": 1,
       "textAlign": "center",
@@ -724,7 +724,7 @@
       "lineHeight": 1.25,
       "autoResize": true,
       "containerId": null,
-      "originalText": "Freeze"
+      "originalText": "Freeze + gen"
     },
     {
       "id": "wp23",

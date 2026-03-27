@@ -89,8 +89,7 @@ fn test_info_value_is_valid_json() {
     let gen = ProductGenerator::new(42);
     let items = gen.generate_product(42);
     let info_item = items.iter().find(|i| i.key == b"info").expect("has info");
-    let parsed: serde_json::Value =
-        serde_json::from_slice(&info_item.value).expect("valid json");
+    let parsed: serde_json::Value = serde_json::from_slice(&info_item.value).expect("valid json");
     assert!(parsed.get("name").is_some());
     assert!(parsed.get("description").is_some());
     assert!(parsed.get("category").is_some());
@@ -102,8 +101,7 @@ fn test_price_value_is_valid_json() {
     let gen = ProductGenerator::new(42);
     let items = gen.generate_product(42);
     let price_item = items.iter().find(|i| i.key == b"price").expect("has price");
-    let parsed: serde_json::Value =
-        serde_json::from_slice(&price_item.value).expect("valid json");
+    let parsed: serde_json::Value = serde_json::from_slice(&price_item.value).expect("valid json");
     assert!(parsed.get("current_cents").is_some());
     assert!(parsed.get("original_cents").is_some());
     assert!(parsed.get("currency").is_some());
@@ -133,8 +131,7 @@ fn test_generate_update_items_valid_json() {
     let mut rng = StdRng::seed_from_u64(123);
     let items = ProductGenerator::generate_update_items(&mut rng);
     let price_item = items.iter().find(|i| i.key == b"price").expect("has price");
-    let parsed: serde_json::Value =
-        serde_json::from_slice(&price_item.value).expect("valid json");
+    let parsed: serde_json::Value = serde_json::from_slice(&price_item.value).expect("valid json");
     assert!(parsed.get("current_cents").is_some());
     assert!(parsed.get("original_cents").is_some());
     let current = parsed["current_cents"].as_u64().expect("u64");
@@ -142,8 +139,7 @@ fn test_generate_update_items_valid_json() {
     assert!(original >= current);
 
     for item in items.iter().filter(|i| i.key.starts_with(b"inventory:")) {
-        let inv: serde_json::Value =
-            serde_json::from_slice(&item.value).expect("valid json");
+        let inv: serde_json::Value = serde_json::from_slice(&item.value).expect("valid json");
         assert!(inv.get("count").is_some());
         assert!(inv.get("reserved").is_some());
     }

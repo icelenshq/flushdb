@@ -1,14 +1,15 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
+use serde::{Deserialize, Serialize};
 
 use super::BenchConfig;
 use crate::cassandra_client::CassandraClient;
 use crate::client::DemoClient;
 use crate::data_gen::ProductGenerator;
 use crate::report;
-use crate::stats::BenchStats;
+use crate::stats::{BenchStats, StatsSnapshot};
 
 enum Op {
     Read,
@@ -55,33 +56,239 @@ struct BackendResult {
     scan: BenchStats,
 }
 
-pub async fn run(
+struct BackendSnapshots {
+    read: StatsSnapshot,
+    write: StatsSnapshot,
+    update: StatsSnapshot,
+    delete: StatsSnapshot,
+    scan: StatsSnapshot,
+}
+
+impl BackendResult {
+    fn snapshots(&self) -> BackendSnapshots {
+        BackendSnapshots {
+            read: self.read.snapshot(),
+            write: self.write.snapshot(),
+            update: self.update.snapshot(),
+            delete: self.delete.snapshot(),
+            scan: self.scan.snapshot(),
+        }
+    }
+}
+
+/// Serializable form of a single operation's stats, written to disk after the flushdb phase
+/// and read back during the cassandra phase to produce a fair cross-run comparison.
+#[derive(Serialize, Deserialize)]
+struct SavedSnapshot {
+    total_ops: u64,
+    elapsed_us: u64,
+    p50_us: u64,
+    p95_us: u64,
+    p99_us: u64,
+    max_us: u64,
+    ops_per_sec: f64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct SavedBackendResult {
+    read: SavedSnapshot,
+    write: SavedSnapshot,
+    update: SavedSnapshot,
+    delete: SavedSnapshot,
+    scan: SavedSnapshot,
+}
+
+impl From<&StatsSnapshot> for SavedSnapshot {
+    fn from(s: &StatsSnapshot) -> Self {
+        SavedSnapshot {
+            total_ops: s.total_ops,
+            elapsed_us: s.elapsed.as_micros() as u64,
+            p50_us: s.p50_us,
+            p95_us: s.p95_us,
+            p99_us: s.p99_us,
+            max_us: s.max_us,
+            ops_per_sec: s.ops_per_sec,
+        }
+    }
+}
+
+impl From<SavedSnapshot> for StatsSnapshot {
+    fn from(s: SavedSnapshot) -> Self {
+        StatsSnapshot {
+            total_ops: s.total_ops,
+            elapsed: Duration::from_micros(s.elapsed_us),
+            p50_us: s.p50_us,
+            p95_us: s.p95_us,
+            p99_us: s.p99_us,
+            max_us: s.max_us,
+            ops_per_sec: s.ops_per_sec,
+        }
+    }
+}
+
+impl From<SavedBackendResult> for BackendSnapshots {
+    fn from(s: SavedBackendResult) -> Self {
+        BackendSnapshots {
+            read: s.read.into(),
+            write: s.write.into(),
+            update: s.update.into(),
+            delete: s.delete.into(),
+            scan: s.scan.into(),
+        }
+    }
+}
+
+fn to_saved(result: &BackendResult) -> SavedBackendResult {
+    let snaps = result.snapshots();
+    SavedBackendResult {
+        read: SavedSnapshot::from(&snaps.read),
+        write: SavedSnapshot::from(&snaps.write),
+        update: SavedSnapshot::from(&snaps.update),
+        delete: SavedSnapshot::from(&snaps.delete),
+        scan: SavedSnapshot::from(&snaps.scan),
+    }
+}
+
+/// Phase 1: benchmark flushdb only. Saves results to `output_path` for use in phase 2.
+/// Run with only minio + flushdb-server running (`docker compose --profile flushdb up`).
+pub async fn run_flushdb_phase(
     config: &BenchConfig,
-    cassandra_addr: &str,
+    output_path: &str,
     seed_products: u32,
     warmup_secs: u64,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let total_ratio =
-        config.write_ratio + config.update_ratio + config.delete_ratio + config.scan_ratio;
-    if total_ratio > 1.0 {
-        return Err(format!(
-            "operation ratios sum to {:.2} (must be <= 1.0)",
-            total_ratio,
-        )
-        .into());
+    validate_ratios(config)?;
+    let read_ratio =
+        1.0 - (config.write_ratio + config.update_ratio + config.delete_ratio + config.scan_ratio);
+
+    print_config_banner(config, read_ratio, warmup_secs);
+    println!("Phase: flushdb  |  output: {}", output_path);
+    println!();
+
+    println!("Seeding {} products to flushdb...", seed_products);
+    let t = Instant::now();
+    seed_flushdb(&config.server_addr, &config.namespace, seed_products).await?;
+    println!("  done in {:.1}s", t.elapsed().as_secs_f64());
+
+    if warmup_secs > 0 {
+        println!(
+            "\nWarmup {}s (page cache, connection pools)...",
+            warmup_secs
+        );
+        let warmup_cfg = BenchConfig {
+            duration_secs: warmup_secs,
+            ..config.clone()
+        };
+        print!("  flushdb... ");
+        bench_flushdb(&warmup_cfg).await?;
+        println!("done");
     }
 
-    let read_ratio = 1.0 - total_ratio;
+    println!(
+        "\nMeasuring for {}s with {} workers...",
+        config.duration_secs, config.concurrency
+    );
+    print!("  flushdb... ");
+    let result = bench_flushdb(config).await?;
+    println!("done");
 
-    // --- Config banner ---
+    print_results("flushdb", &result.snapshots());
+
+    let saved = to_saved(&result);
+    let json = serde_json::to_string_pretty(&saved)?;
+    std::fs::write(output_path, &json)?;
+    println!("\nResults saved to {}", output_path);
+
+    Ok(())
+}
+
+/// Phase 2: benchmark cassandra only. Loads flushdb results from `flushdb_results_path`
+/// and prints a side-by-side comparison.
+/// Run with only cassandra running (`docker compose --profile cassandra up`).
+pub async fn run_cassandra_phase(
+    config: &BenchConfig,
+    cassandra_addr: &str,
+    flushdb_results_path: &str,
+    seed_products: u32,
+    warmup_secs: u64,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    validate_ratios(config)?;
+    let read_ratio =
+        1.0 - (config.write_ratio + config.update_ratio + config.delete_ratio + config.scan_ratio);
+
+    let json = std::fs::read_to_string(flushdb_results_path)
+        .map_err(|e| format!("cannot read {}: {}", flushdb_results_path, e))?;
+    let saved: SavedBackendResult = serde_json::from_str(&json)
+        .map_err(|e| format!("cannot parse {}: {}", flushdb_results_path, e))?;
+    let flushdb_snaps: BackendSnapshots = saved.into();
+
+    print_config_banner(config, read_ratio, warmup_secs);
+    println!(
+        "Phase: cassandra  |  flushdb results: {}",
+        flushdb_results_path
+    );
+    println!();
+
+    let cass_keyspace = format!("{}_bench", config.namespace);
+
+    println!("Seeding {} products to Cassandra...", seed_products);
+    let t = Instant::now();
+    seed_cassandra(cassandra_addr, &cass_keyspace, seed_products).await?;
+    println!("  done in {:.1}s", t.elapsed().as_secs_f64());
+
+    if warmup_secs > 0 {
+        println!(
+            "\nWarmup {}s (JVM warm-up, connection pools)...",
+            warmup_secs
+        );
+        let warmup_cfg = BenchConfig {
+            duration_secs: warmup_secs,
+            ..config.clone()
+        };
+        print!("  cassandra... ");
+        bench_cassandra(&warmup_cfg, cassandra_addr, &cass_keyspace).await?;
+        println!("done");
+    }
+
+    println!(
+        "\nMeasuring for {}s with {} workers...",
+        config.duration_secs, config.concurrency
+    );
+    print!("  cassandra... ");
+    let cassandra_result = bench_cassandra(config, cassandra_addr, &cass_keyspace).await?;
+    println!("done");
+
+    print_results("Cassandra", &cassandra_result.snapshots());
+    print_comparison(&flushdb_snaps, &cassandra_result.snapshots());
+
+    Ok(())
+}
+
+fn validate_ratios(config: &BenchConfig) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let total = config.write_ratio + config.update_ratio + config.delete_ratio + config.scan_ratio;
+    if total > 1.0 {
+        return Err(format!("operation ratios sum to {:.2} (must be <= 1.0)", total).into());
+    }
+    Ok(())
+}
+
+fn print_config_banner(config: &BenchConfig, read_ratio: f64, warmup_secs: u64) {
     println!("=== Benchmark Configuration ===");
-    println!("Duration:       {}s measurement + {}s warmup per backend", config.duration_secs, warmup_secs);
+    println!(
+        "Duration:       {}s measurement + {}s warmup",
+        config.duration_secs, warmup_secs
+    );
     println!("Concurrency:    {} workers", config.concurrency);
     println!("Product range:  {}", config.product_range);
-    println!("Seed products:  {}", seed_products);
-    println!("Resource limit: 2 CPUs, 1024 MB per database (set in docker-compose.yml)");
-    println!("  flushdb:      single node (2 CPU / 1 GB) + minio (1 CPU / 512 MB)");
-    println!("  cassandra:    single node (2 CPU / 1 GB, 512 MB heap, 1 token, LCS, no hints)");
+    println!("Environment:    benchmark client + both backends run inside Docker (docker compose)");
+    println!("Resource limit: 2 CPUs / 1 GB each");
+    println!(
+        "  flushdb:      flushdb-server (2 CPU / 1 GB) + MinIO (1 CPU / 512 MB) — profile: flushdb",
+    );
+    println!(
+        "  cassandra:    single node (512 MB heap, 1 token, LCS, no hints, 2 CPU / 1 GB) — profile: cassandra",
+    );
+    println!("  client:       flushdb-demo container, run sequentially with --no-deps");
     println!(
         "Op mix:         read={:.0}% write={:.0}% update={:.0}% delete={:.0}% scan={:.0}%",
         read_ratio * 100.0,
@@ -90,55 +297,69 @@ pub async fn run(
         config.delete_ratio * 100.0,
         config.scan_ratio * 100.0,
     );
+}
+
+fn print_results(label: &str, snaps: &BackendSnapshots) {
+    report::print_header(&format!("{} Results", label));
+    report::print_stats_row("read", &snaps.read);
+    report::print_stats_row("write", &snaps.write);
+    report::print_stats_row("update", &snaps.update);
+    report::print_stats_row("delete", &snaps.delete);
+    report::print_stats_row("scan", &snaps.scan);
+}
+
+fn print_comparison(flushdb: &BackendSnapshots, cassandra: &BackendSnapshots) {
     println!();
+    println!("=== Comparison (flushdb vs Cassandra) ===");
+    println!(
+        "{:<12} {:>14} {:>14} {:>10}",
+        "Metric", "flushdb p50", "cassandra p50", "speedup"
+    );
+    println!("{}", "-".repeat(54));
 
-    // --- Seed phase ---
-    println!("Seeding {} products to both backends...", seed_products);
-    let t = Instant::now();
-    seed_flushdb(&config.server_addr, &config.namespace, seed_products).await?;
-    let flushdb_seed_secs = t.elapsed().as_secs_f64();
+    let pairs: &[(&str, &StatsSnapshot, &StatsSnapshot)] = &[
+        ("read", &flushdb.read, &cassandra.read),
+        ("write", &flushdb.write, &cassandra.write),
+        ("update", &flushdb.update, &cassandra.update),
+        ("delete", &flushdb.delete, &cassandra.delete),
+        ("scan", &flushdb.scan, &cassandra.scan),
+    ];
 
-    let t = Instant::now();
-    let cass_keyspace = format!("{}_bench", config.namespace);
-    seed_cassandra(cassandra_addr, &cass_keyspace, seed_products).await?;
-    let cass_seed_secs = t.elapsed().as_secs_f64();
-
-    println!("  flushdb:    {:.1}s", flushdb_seed_secs);
-    println!("  cassandra:  {:.1}s", cass_seed_secs);
-
-    // --- Warmup phase (results discarded) ---
-    if warmup_secs > 0 {
-        println!("\nWarmup {}s per backend (JVM warm-up, connection pools, page cache)...", warmup_secs);
-        let warmup_cfg = BenchConfig {
-            duration_secs: warmup_secs,
-            ..config.clone()
+    for (label, f, c) in pairs {
+        if f.total_ops == 0 && c.total_ops == 0 {
+            continue;
+        }
+        let speedup = if f.p50_us > 0 {
+            c.p50_us as f64 / f.p50_us as f64
+        } else {
+            0.0
         };
-        print!("  flushdb...  ");
-        bench_flushdb(&warmup_cfg).await?;
-        println!("done");
-        print!("  cassandra...");
-        bench_cassandra(&warmup_cfg, cassandra_addr, &cass_keyspace).await?;
-        println!("done");
+        println!(
+            "{:<12} {:>12}us {:>12}us {:>9.1}x",
+            label, f.p50_us, c.p50_us, speedup
+        );
     }
 
-    // --- Measured phase ---
+    println!();
     println!(
-        "\nMeasuring for {}s with {} workers per backend...",
-        config.duration_secs, config.concurrency
+        "{:<12} {:>14} {:>14} {:>10}",
+        "", "flushdb ops/s", "cass ops/s", "ratio"
     );
-    print!("  flushdb...  ");
-    let flushdb_result = bench_flushdb(config).await?;
-    println!("done");
-    print!("  cassandra...");
-    let cassandra_result = bench_cassandra(config, cassandra_addr, &cass_keyspace).await?;
-    println!("done");
-
-    // --- Results ---
-    print_results("flushdb", &flushdb_result);
-    print_results("Cassandra", &cassandra_result);
-    print_comparison(&flushdb_result, &cassandra_result);
-
-    Ok(())
+    println!("{}", "-".repeat(54));
+    for (label, f, c) in pairs {
+        if f.total_ops == 0 && c.total_ops == 0 {
+            continue;
+        }
+        let ratio = if c.ops_per_sec > 0.0 {
+            f.ops_per_sec / c.ops_per_sec
+        } else {
+            0.0
+        };
+        println!(
+            "{:<12} {:>14.1} {:>14.1} {:>9.1}x",
+            label, f.ops_per_sec, c.ops_per_sec, ratio
+        );
+    }
 }
 
 async fn seed_flushdb(
@@ -200,7 +421,13 @@ async fn bench_flushdb(
                 let product_id = rng.random_range(0..product_range);
                 let record_id = ProductGenerator::record_id(product_id);
 
-                match pick_op(&mut rng, write_ratio, update_ratio, delete_ratio, scan_ratio) {
+                match pick_op(
+                    &mut rng,
+                    write_ratio,
+                    update_ratio,
+                    delete_ratio,
+                    scan_ratio,
+                ) {
                     Op::Write => {
                         let items = gen.generate_product(product_id);
                         let t = Instant::now();
@@ -286,7 +513,13 @@ async fn bench_cassandra(
                 let product_id = rng.random_range(0..product_range);
                 let record_id = ProductGenerator::record_id(product_id);
 
-                match pick_op(&mut rng, write_ratio, update_ratio, delete_ratio, scan_ratio) {
+                match pick_op(
+                    &mut rng,
+                    write_ratio,
+                    update_ratio,
+                    delete_ratio,
+                    scan_ratio,
+                ) {
                     Op::Write => {
                         let items = gen.generate_product(product_id);
                         let t = Instant::now();
@@ -360,72 +593,4 @@ async fn merge_handles(
         result.scan.merge(&s);
     }
     Ok(result)
-}
-
-fn print_results(label: &str, result: &BackendResult) {
-    report::print_header(&format!("{} Results", label));
-    report::print_stats_row("read", &result.read.snapshot());
-    report::print_stats_row("write", &result.write.snapshot());
-    report::print_stats_row("update", &result.update.snapshot());
-    report::print_stats_row("delete", &result.delete.snapshot());
-    report::print_stats_row("scan", &result.scan.snapshot());
-}
-
-fn print_comparison(flushdb: &BackendResult, cassandra: &BackendResult) {
-    println!();
-    println!("=== Comparison (flushdb vs Cassandra) ===");
-    println!(
-        "{:<12} {:>14} {:>14} {:>10}",
-        "Metric", "flushdb p50", "cassandra p50", "speedup"
-    );
-    println!("{}", "-".repeat(54));
-
-    let pairs: &[(&str, &BenchStats, &BenchStats)] = &[
-        ("read", &flushdb.read, &cassandra.read),
-        ("write", &flushdb.write, &cassandra.write),
-        ("update", &flushdb.update, &cassandra.update),
-        ("delete", &flushdb.delete, &cassandra.delete),
-        ("scan", &flushdb.scan, &cassandra.scan),
-    ];
-
-    for (label, f, c) in pairs {
-        let f_snap = f.snapshot();
-        let c_snap = c.snapshot();
-        if f_snap.total_ops == 0 && c_snap.total_ops == 0 {
-            continue;
-        }
-        let speedup = if f_snap.p50_us > 0 {
-            c_snap.p50_us as f64 / f_snap.p50_us as f64
-        } else {
-            0.0
-        };
-        println!(
-            "{:<12} {:>12}us {:>12}us {:>9.1}x",
-            label, f_snap.p50_us, c_snap.p50_us, speedup
-        );
-    }
-
-    // Throughput comparison
-    println!();
-    println!(
-        "{:<12} {:>14} {:>14} {:>10}",
-        "", "flushdb ops/s", "cass ops/s", "ratio"
-    );
-    println!("{}", "-".repeat(54));
-    for (label, f, c) in pairs {
-        let f_snap = f.snapshot();
-        let c_snap = c.snapshot();
-        if f_snap.total_ops == 0 && c_snap.total_ops == 0 {
-            continue;
-        }
-        let ratio = if c_snap.ops_per_sec > 0.0 {
-            f_snap.ops_per_sec / c_snap.ops_per_sec
-        } else {
-            0.0
-        };
-        println!(
-            "{:<12} {:>14.1} {:>14.1} {:>9.1}x",
-            label, f_snap.ops_per_sec, c_snap.ops_per_sec, ratio
-        );
-    }
 }

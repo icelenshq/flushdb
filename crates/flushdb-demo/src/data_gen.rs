@@ -33,22 +33,8 @@ const ADJECTIVES: &[&str] = &[
 ];
 
 const NOUNS: &[&str] = &[
-    "Widget",
-    "Gadget",
-    "Gizmo",
-    "Device",
-    "Tool",
-    "Kit",
-    "Set",
-    "Pack",
-    "Bundle",
-    "System",
-    "Station",
-    "Hub",
-    "Gear",
-    "Unit",
-    "Module",
-    "Rig",
+    "Widget", "Gadget", "Gizmo", "Device", "Tool", "Kit", "Set", "Pack", "Bundle", "System",
+    "Station", "Hub", "Gear", "Unit", "Module", "Rig",
 ];
 
 const BRANDS: &[&str] = &[
