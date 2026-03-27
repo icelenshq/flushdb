@@ -30,7 +30,7 @@ Namespace → Record (by ID) → Items (sorted by key)
 
 A **record** is identified by a string ID (e.g., `product-42`). Each record contains a sorted set of **items**, where each item has a binary key, value, and optional metadata.
 
-This is similar to a Cassandra partition: the record ID is the partition key, and item keys are clustering columns. The difference is that flushdb stores everything on S3 and uses an LSM-tree engine locally.
+This is similar to a Cassandra partition: the record ID is the partition key, and item keys are clustering columns. The difference is that flushdb stores everything on S3 and uses an LSM-tree engine locally. See [Data Model Patterns](./data-model) for concrete examples including e-commerce catalogs and graph adjacency lists.
 
 ## Project Structure
 
