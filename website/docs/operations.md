@@ -143,7 +143,7 @@ Tests live in separate `tests/` directories per crate (not inline `#[cfg(test)]`
 
 ## Benchmarks
 
-The `flushdb-demo` crate provides seeding, verification, and benchmarking with an e-commerce dataset (products with info, price, inventory, variants). Data is deterministic (seed 42) for reproducibility.
+The `flushdb-demo` crate provides seeding, verification, and benchmarking with an e-commerce dataset — see [Data Model Patterns](./data-model#benchmark-dataset-e-commerce-catalog) for the full schema. Data is deterministic (seed 42) for reproducibility.
 
 ### Seed Data
 

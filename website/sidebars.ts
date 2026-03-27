@@ -4,6 +4,7 @@ const sidebars: SidebarsConfig = {
   docsSidebar: [
     'index',
     'architecture',
+    'data-model',
     {
       type: 'category',
       label: 'Storage Engine Internals',
